@@ -37,7 +37,14 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Enable CORS
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:4200',
+    'https://www.hrpropninja.com',
+    'https://hrpropninja.com'
+  ],
+  credentials: true
+}));
 
 // Mount routers
 const auth = require('./routes/authRoutes');
@@ -80,7 +87,7 @@ app.use(errorHandler);
 
 // Home route
 app.get('/', (req, res) => {
-  res.send('PropHR API is running...');
+  res.send('HR Prop Ninja API is running...');
 });
 
 module.exports = app;

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ToastService } from '../services/toast.service';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-joining-agreement-page',
@@ -44,7 +45,7 @@ export class JoiningAgreementPageComponent implements OnInit {
   }
 
   loadDepartments() {
-    this.http.get('http://localhost:5000/api/departments').subscribe({
+    this.http.get(`${environment.apiUrl}/departments`).subscribe({
       next: (res: any) => this.departments = res.data || [],
       error: (err) => {
         this.departments = [];
@@ -54,7 +55,7 @@ export class JoiningAgreementPageComponent implements OnInit {
   }
 
   loadTeams() {
-    this.http.get('http://localhost:5000/api/teams').subscribe({
+    this.http.get(`${environment.apiUrl}/teams`).subscribe({
       next: (res: any) => this.teams = res.data || [],
       error: (err) => {
         this.teams = [];
@@ -93,7 +94,7 @@ export class JoiningAgreementPageComponent implements OnInit {
       }
     });
 
-    this.http.post('http://localhost:5000/api/documents/joining-agreement/send', payload).subscribe({
+    this.http.post(`${environment.apiUrl}/documents/joining-agreement/send`, payload).subscribe({
       next: (res: any) => {
         this.result = res.data;
         this.sending = false;

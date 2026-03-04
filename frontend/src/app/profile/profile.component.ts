@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { ActivatedRoute } from '@angular/router';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-profile',
@@ -154,7 +155,7 @@ export class ProfileComponent implements OnInit {
 
   uploadDocumentFile(docType: string, base64: any) {
     this.uploading = true;
-    this.http.post('http://localhost:5000/api/documents/upload', {
+    this.http.post(`${environment.apiUrl}/documents/upload`, {
       employeeId: this.user._id,
       type: docType,
       file: base64

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-templates-page',
@@ -15,7 +16,7 @@ export class TemplatesPageComponent implements OnInit {
   content = '';
   loading = false;
   saving = false;
-  private apiUrl = 'http://localhost:5000/api';
+  private apiUrl = `${environment.apiUrl}`;
 
   placeholders = [
     { key: '{{fullName}}', desc: 'Employee Full Name' },

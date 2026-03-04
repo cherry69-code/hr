@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-hr-documents-page',
@@ -42,7 +43,7 @@ export class HrDocumentsPageComponent implements OnInit {
 
   loadEmployees() {
     this.loadingEmployees = true;
-    this.http.get('http://localhost:5000/api/employees').subscribe({
+    this.http.get(`${environment.apiUrl}/employees`).subscribe({
       next: (res: any) => {
         this.employees = res.data || [];
         this.loadingEmployees = false;
@@ -57,7 +58,7 @@ export class HrDocumentsPageComponent implements OnInit {
 
   loadPending() {
     this.loadingPending = true;
-    this.http.get('http://localhost:5000/api/esign/pending').subscribe({
+    this.http.get(`${environment.apiUrl}/esign/pending`).subscribe({
       next: (res: any) => {
         this.pending = res.data || [];
         this.loadingPending = false;
@@ -80,7 +81,7 @@ export class HrDocumentsPageComponent implements OnInit {
       return;
     }
 
-    this.http.post('http://localhost:5000/api/esign/hr/generate', {
+    this.http.post(`${environment.apiUrl}/esign/hr/generate`, {
       employeeId: this.form.employeeId,
       documentType: this.form.documentType
     }).subscribe({
@@ -103,7 +104,7 @@ export class HrDocumentsPageComponent implements OnInit {
     // Leaving it as is, but focusing on the countersign part.
     this.sending = true;
     this.error = '';
-    this.http.post('http://localhost:5000/api/esign/hr/send', {
+    this.http.post(`${environment.apiUrl}/esign/hr/send`, {
       employeeId: this.form.employeeId,
       documentType: this.form.documentType,
       htmlContent: this.form.htmlContent,

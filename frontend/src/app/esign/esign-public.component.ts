@@ -7,6 +7,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { ToastService } from '../services/toast.service';
 import { ToastComponent } from '../shared/components/toast/toast.component';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-esign-public',

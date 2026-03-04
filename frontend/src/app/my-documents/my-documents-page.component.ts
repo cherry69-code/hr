@@ -1,6 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-my-documents-page',
@@ -22,7 +23,7 @@ export class MyDocumentsPageComponent implements OnInit {
   load() {
     this.loading = true;
     this.error = '';
-    this.http.get('http://localhost:5000/api/vault/my').subscribe({
+    this.http.get(`${environment.apiUrl}/vault/my`).subscribe({
       next: (res: any) => {
         this.docs = res.data || [];
         this.loading = false;

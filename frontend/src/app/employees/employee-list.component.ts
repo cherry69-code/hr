@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-employee-list',
@@ -48,7 +49,7 @@ export class EmployeeListComponent implements OnInit {
   }
 
   loadTeams() {
-    this.http.get('http://localhost:5000/api/teams').subscribe({
+    this.http.get(`${environment.apiUrl}/teams`).subscribe({
       next: (res: any) => this.teams = res.data,
       error: (err) => {
         this.teams = [];
@@ -58,7 +59,7 @@ export class EmployeeListComponent implements OnInit {
   }
 
   loadDepartments() {
-    this.http.get('http://localhost:5000/api/departments').subscribe({
+    this.http.get(`${environment.apiUrl}/departments`).subscribe({
       next: (res: any) => {
         this.departments = res.data;
       },
@@ -67,7 +68,7 @@ export class EmployeeListComponent implements OnInit {
   }
 
   loadManagers() {
-    this.http.get('http://localhost:5000/api/employees/managers').subscribe({
+    this.http.get(`${environment.apiUrl}/employees/managers`).subscribe({
       next: (res: any) => {
         this.managers = res.data;
         // Ensure Admin is at the top if present
@@ -85,7 +86,7 @@ export class EmployeeListComponent implements OnInit {
 
   loadEmployees() {
     this.loading = true;
-    this.http.get('http://localhost:5000/api/employees').subscribe({
+    this.http.get(`${environment.apiUrl}/employees`).subscribe({
       next: (res: any) => {
         this.employees = res.data;
         this.loading = false;
@@ -174,7 +175,7 @@ export class EmployeeListComponent implements OnInit {
     if (!payload.departmentId) delete payload.departmentId;
     if (!payload.reportingManagerId) delete payload.reportingManagerId;
 
-    this.http.post('http://localhost:5000/api/employees', payload).subscribe({
+    this.http.post(`${environment.apiUrl}/employees`, payload).subscribe({
       next: () => {
         this.toast.success('Employee added successfully');
         this.closeModal();

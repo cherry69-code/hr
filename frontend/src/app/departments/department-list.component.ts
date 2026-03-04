@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-department-list',
@@ -31,7 +32,7 @@ export class DepartmentListComponent implements OnInit {
 
   loadDepartments() {
     this.loading = true;
-    this.http.get('http://localhost:5000/api/departments').subscribe({
+    this.http.get(`${environment.apiUrl}/departments`).subscribe({
       next: (res: any) => {
         this.departments = res.data;
         this.loading = false;
@@ -69,7 +70,7 @@ export class DepartmentListComponent implements OnInit {
         }
       });
     } else {
-      this.http.post('http://localhost:5000/api/departments', this.departmentForm).subscribe({
+      this.http.post(`${environment.apiUrl}/departments`, this.departmentForm).subscribe({
         next: () => {
           this.showModal = false;
           this.loadDepartments();

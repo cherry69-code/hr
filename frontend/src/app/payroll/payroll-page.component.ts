@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-payroll-page',
@@ -41,7 +42,7 @@ export class PayrollPageComponent implements OnInit {
   }
 
   loadEmployees() {
-    this.http.get('http://localhost:5000/api/employees').subscribe({
+    this.http.get(`${environment.apiUrl}/employees`).subscribe({
       next: (res: any) => this.employees = res.data,
       error: (err) => this.toast.error(err.error?.error || 'Failed to load employees')
     });

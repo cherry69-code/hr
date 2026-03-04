@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { ToastService } from '../services/toast.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-leave-page',
@@ -63,7 +64,7 @@ export class LeavePageComponent implements OnInit {
       employeeId: this.authService.currentUserValue.id,
       status: 'pending'
     };
-    this.http.post('http://localhost:5000/api/leaves', payload).subscribe({
+    this.http.post(`${environment.apiUrl}/leaves`, payload).subscribe({
       next: () => {
         this.toast.success('Leave applied successfully');
         this.loadLeaves();

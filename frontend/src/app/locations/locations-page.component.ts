@@ -2,6 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-locations-page',
@@ -32,7 +33,7 @@ export class LocationsPageComponent implements OnInit {
 
   loadLocations() {
     this.loading = true;
-    this.http.get('http://localhost:5000/api/locations').subscribe({
+    this.http.get(`${environment.apiUrl}/locations`).subscribe({
       next: (res: any) => {
         this.locations = res.data;
         this.loading = false;
@@ -78,7 +79,7 @@ export class LocationsPageComponent implements OnInit {
       return;
     }
 
-    this.http.post('http://localhost:5000/api/locations', this.form).subscribe({
+    this.http.post(`${environment.apiUrl}/locations`, this.form).subscribe({
       next: () => {
         this.showModal = false;
         this.loadLocations();

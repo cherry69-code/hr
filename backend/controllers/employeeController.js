@@ -75,7 +75,7 @@ exports.createEmployee = asyncHandler(async (req, res, next) => {
   const resetToken = employee.getResetPasswordToken();
   await employee.save({ validateBeforeSave: false });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://www.hrpropninja.com';
   const resetUrl = `${frontendUrl}/auth/reset-password/${resetToken}`;
 
   const html = `

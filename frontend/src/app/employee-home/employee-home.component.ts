@@ -7,6 +7,7 @@ import { SignaturePadComponent } from '../shared/components/signature-pad/signat
 import { ToastService } from '../services/toast.service';
 import * as L from 'leaflet';
 import { RouterModule } from '@angular/router';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-employee-home',
@@ -121,7 +122,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   }
 
   loadLocations() {
-    this.http.get('http://localhost:5000/api/locations/active').subscribe({
+    this.http.get(`${environment.apiUrl}/locations/active`).subscribe({
       next: (res: any) => {
         this.locations = res.data || [];
         if (!this.mapInitialized) {
@@ -466,7 +467,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   }
 
   loadTeamSummary() {
-    this.http.get('http://localhost:5000/api/attendance/summary/team').subscribe({
+    this.http.get(`${environment.apiUrl}/attendance/summary/team`).subscribe({
       next: (res: any) => this.teamAttendance = res.data,
       error: (err) => this.toast.error(err.error?.error || 'Failed to load team summary')
     });
