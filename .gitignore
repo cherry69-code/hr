@@ -1,0 +1,35 @@
+############################
+# Root-level ignore for monorepo
+############################
+
+# Node
+backend/node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Environments / Secrets
+backend/.env
+frontend/.env
+
+# Angular build artifacts and cache
+frontend/dist/
+frontend/.angular/
+
+# Generated uploads and PDFs
+backend/uploads/
+backend/utils/*.pdf
+
+# Coverage and temp
+coverage/
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+

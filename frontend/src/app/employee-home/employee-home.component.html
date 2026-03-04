@@ -1,0 +1,264 @@
+<div class="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
+
+  <!-- Header Section -->
+  <header class="flex justify-between items-center mb-8">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Good Morning, {{ user?.name || 'Employee' }}! 👋</h1>
+      <p class="text-sm text-gray-500 mt-1">{{ currentDate | date:'fullDate' }}</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <button (click)="handlePunch()" [disabled]="loading || isCheckedOut" class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2.5 rounded-lg shadow-sm font-medium transition-all flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+        </svg>
+        {{ loading ? statusMessage : (isCheckedOut ? 'Day Completed' : (isCheckedIn ? 'Punch Out' : 'Punch In')) }}
+      </button>
+      <div class="relative group">
+        <img [src]="user?.profilePicture || 'https://ui-avatars.com/api/?name=' + (user?.name || 'User') + '&background=random'" alt="User" class="w-10 h-10 rounded-full border-2 border-white shadow-md cursor-pointer">
+        <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl py-2 hidden group-hover:block z-50">
+          <a routerLink="/profile" class="block px-4 py-2 hover:bg-gray-100 text-sm">Profile</a>
+          <button (click)="logout()" class="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-red-600">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+      <div class="p-3 bg-blue-50 text-blue-600 rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500 font-medium">Avg. Working Hours</p>
+        <p class="text-xl font-bold text-gray-900">{{ stats.avgWorkingHours }} Hrs</p>
+      </div>
+    </div>
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+      <div class="p-3 bg-green-50 text-green-600 rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500 font-medium">On Time Arrival</p>
+        <p class="text-xl font-bold text-gray-900">{{ stats.onTimeArrival }}</p>
+      </div>
+    </div>
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+      <div class="p-3 bg-purple-50 text-purple-600 rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500 font-medium">Average Time</p>
+        <p class="text-xl font-bold text-gray-900">{{ stats.averageTime }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <!-- Left Column: Calendar (Span 2) -->
+    <div class="lg:col-span-2 space-y-8">
+
+      <!-- Calendar Widget -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+          <h2 class="text-lg font-bold text-gray-900">Attendance</h2>
+          <div class="flex items-center gap-4">
+            <button (click)="prevMonth()" class="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <span class="text-base font-semibold text-gray-700 w-32 text-center">{{ currentMonthName }} {{ currentYear }}</span>
+            <button (click)="nextMonth()" class="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-6">
+          <!-- Days Header -->
+          <div class="grid grid-cols-7 mb-4">
+            <div *ngFor="let day of weekDays" class="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">
+              {{ day }}
+            </div>
+          </div>
+
+          <!-- Calendar Grid -->
+          <div class="grid grid-cols-7 gap-2">
+            <div *ngFor="let day of daysInMonth"
+                 class="aspect-square rounded-lg flex flex-col items-center justify-center text-sm font-medium relative group transition-all"
+                 [ngClass]="{
+                   'bg-white text-gray-300': !day.date,
+                   'bg-green-50 text-green-700 border border-green-100': day.status === 'present',
+                   'bg-red-50 text-red-700 border border-red-100': day.status === 'absent' && day.date,
+                   'bg-yellow-50 text-yellow-700 border border-yellow-100': day.status === 'late',
+                   'bg-gray-100 text-gray-500': day.status === 'weekend',
+                   'bg-blue-50 text-blue-700 border border-blue-100': day.status === 'holiday',
+                   'bg-purple-50 text-purple-700 border border-purple-100': day.status === 'leave'
+                 }">
+
+              <span *ngIf="day.date">{{ day.day }}</span>
+
+              <!-- Status Indicator (Dot) -->
+              <div *ngIf="day.date && day.status !== 'weekend'"
+                   class="w-1.5 h-1.5 rounded-full mt-1"
+                   [ngClass]="{
+                     'bg-green-500': day.status === 'present',
+                     'bg-red-500': day.status === 'absent',
+                     'bg-yellow-500': day.status === 'late',
+                     'bg-blue-500': day.status === 'holiday',
+                     'bg-purple-500': day.status === 'leave'
+                   }">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legends -->
+        <div class="px-6 pb-6 border-t border-gray-100 pt-4">
+          <div class="flex flex-wrap gap-4 justify-center text-xs text-gray-600">
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-green-500"></span> Present</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500"></span> Absent</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-yellow-500"></span> Late</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-gray-400"></span> Week Off</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span> Holiday</div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500"></span> Leave</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Widget -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-4 border-b border-gray-100">
+          <h2 class="text-lg font-bold text-gray-900">Current Location</h2>
+        </div>
+        <div class="p-4">
+          <div id="map" class="h-64 w-full rounded-lg z-0"></div>
+          <div class="mt-3 text-sm text-gray-600 flex justify-between items-center">
+            <span>
+              <span class="font-medium text-gray-900">Nearest Office:</span> {{ nearestLocationName || 'Locating...' }}
+            </span>
+            <span [ngClass]="(withinGeofence || isRemoteAllowedToday) ? 'text-green-600' : 'text-red-600'" class="font-medium flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full" [ngClass]="(withinGeofence || isRemoteAllowedToday) ? 'bg-green-600' : 'bg-red-600'"></span>
+              {{ withinGeofence ? 'Within Range' : (isRemoteAllowedToday ? 'Remote Allowed' : 'Out of Range') }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Sidebar (Span 1) -->
+    <div class="space-y-8">
+
+      <!-- Today's Activity -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 class="text-lg font-bold text-gray-900 mb-6">Today's Activity</h2>
+        <div class="relative pl-4 border-l-2 border-gray-200 space-y-8">
+
+          <!-- Punch In -->
+          <div class="relative">
+            <div class="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-green-500 border-2 border-white ring-2 ring-green-100"></div>
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Punch In</p>
+            <p class="text-lg font-bold text-gray-900">{{ todaySummary.inTime }}</p>
+            <p class="text-xs text-gray-400 mt-1 flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {{ todaySummary.location }}
+            </p>
+          </div>
+
+          <!-- Punch Out -->
+          <div class="relative">
+            <div class="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-red-500 border-2 border-white ring-2 ring-red-100"></div>
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Punch Out</p>
+            <p class="text-lg font-bold text-gray-900">{{ todaySummary.outTime }}</p>
+          </div>
+
+        </div>
+
+        <!-- Total Hours -->
+        <div class="mt-8 pt-6 border-t border-gray-100 flex justify-between items-center">
+          <div>
+            <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider">Total Work Hours</p>
+            <p class="text-xl font-bold text-gray-900 mt-1">{{ todaySummary.workHrs }}</p>
+          </div>
+          <div class="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Team Summary -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+          <h2 class="text-lg font-bold text-gray-900">Team Summary</h2>
+          <a routerLink="/team" class="text-sm text-blue-600 hover:text-blue-700 font-medium">View All</a>
+        </div>
+        <div class="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+          <div *ngFor="let member of teamAttendance" class="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+            <div class="flex items-center gap-3">
+              <img [src]="member.avatar || 'https://ui-avatars.com/api/?name=' + (member.name || 'User') + '&background=random'" alt="Avatar" class="w-8 h-8 rounded-full object-cover bg-gray-200">
+              <div>
+                <p class="text-sm font-semibold text-gray-900">{{ member.name }}</p>
+                <p class="text-xs text-gray-500">{{ member.role }}</p>
+              </div>
+            </div>
+            <span class="px-2 py-1 rounded-full text-xs font-medium"
+                  [ngClass]="{
+                    'bg-green-100 text-green-700': member.status === 'present',
+                    'bg-red-100 text-red-700': member.status === 'absent',
+                    'bg-yellow-100 text-yellow-700': member.status === 'late'
+                  }">
+              {{ member.status | titlecase }}
+            </span>
+          </div>
+          <div *ngIf="teamAttendance.length === 0" class="p-6 text-center text-gray-500 text-sm">
+            No team members found.
+          </div>
+        </div>
+      </div>
+
+      <!-- Leave Balances -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 class="text-lg font-bold text-gray-900 mb-6">Leave Balance</h2>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-purple-50 p-4 rounded-xl text-center">
+            <p class="text-2xl font-bold text-purple-700">{{ leaveSummary.annual }}</p>
+            <p class="text-xs text-purple-600 font-medium mt-1">Annual Leave</p>
+          </div>
+          <div class="bg-orange-50 p-4 rounded-xl text-center">
+            <p class="text-2xl font-bold text-orange-700">{{ leaveSummary.sick }}</p>
+            <p class="text-xs text-orange-600 font-medium mt-1">Sick Leave</p>
+          </div>
+          <div class="bg-blue-50 p-4 rounded-xl text-center">
+            <p class="text-2xl font-bold text-blue-700">{{ leaveSummary.optional }}</p>
+            <p class="text-xs text-blue-600 font-medium mt-1">Optional Leave</p>
+          </div>
+          <div class="bg-gray-50 p-4 rounded-xl text-center cursor-pointer hover:bg-gray-100 transition-colors border border-dashed border-gray-300 flex flex-col items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <p class="text-xs text-gray-500 font-medium">Apply Leave</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>

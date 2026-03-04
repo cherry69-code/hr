@@ -1,0 +1,26 @@
+1. DEFINITIONS AND INTERPRETATIONS
+1.1. In this agreement the following words and phrases shall bear the meanings respectively ascribed to them, that is to say:
+a) "the Particulars" means the particulars incorporated in under the agreement as varied time to time as agreed by the parties to the agreement
+b) "the Employee" means the individual defined under specific labour laws applying particularly to the company like Employee State Insurance Act, 1948.
+c) "the Company" means a company registered under Companies Act ,1956 or Companies Act, 2013 named as PropNinja Consulting Pvt. Ltd. also includes its associated companies etc.
+d) "the Associated Company" means a subsidiary and any other Company which is for the time being a holding Company of the Company
+e) "Financial Year" means the financial year which shall run from the 1st day of April to the 31st day of March every year.
+f) "Calendar Year" means the calendar year which shall run from the 1st day of January to the 31st day of December every year.
+g) "Month" means a calendar month
+
+IN WITNESS whereof the parties hereto have hereunto set their hands the day and year first herein before written.
+
+SIGNED
+for and on behalf of
+PropNinja Consulting Pvt. Ltd.
+
+Authorized Signatory
+{{hrSignature}}
+
+Accepted:
+{{salutation}} {{fullName}}
+Employee ID: {{employeeId}}
+Aadhar: {{aadharNumber}}
+PAN: {{panNumber}}
+Date: {{signingDate}}
+{{employeeSignature}}

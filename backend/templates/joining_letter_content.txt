@@ -1,0 +1,9 @@
+[PASTE YOUR JOINING LETTER CONTENT HERE]
+[YOU CAN USE THE FOLLOWING PLACEHOLDERS:]
+- {{fullName}} : Employee Full Name
+- {{designation}} : Job Title
+- {{joiningDate}} : Date of Joining
+- {{ctc}} : Annual CTC
+- {{address}} : Employee Address
+- {{email}} : Employee Email
+- {{fatherName}} : Father's Name

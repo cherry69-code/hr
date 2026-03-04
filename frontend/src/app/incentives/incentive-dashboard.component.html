@@ -1,0 +1,105 @@
+<div class="p-6 bg-[#F1F5F9] min-h-screen">
+
+  <h1 class="text-2xl font-bold text-[#0F172A] mb-6">
+    Incentive Dashboard
+  </h1>
+
+  <div class="grid md:grid-cols-4 gap-6 mb-6">
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <p class="text-gray-500">Quarterly Incentive</p>
+      <h2 class="text-2xl font-bold text-[#16A34A]">
+        ₹{{ data?.incentive?.quarterlyIncentive }}
+      </h2>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <p class="text-gray-500">Cash Payout</p>
+      <h2 class="text-2xl font-bold text-[#0F172A]">
+        ₹{{ data?.incentive?.cashIncentive }}
+      </h2>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <p class="text-gray-500">ESOP Allocation</p>
+      <h2 class="text-2xl font-bold text-purple-600">
+        ₹{{ data?.incentive?.esop }}
+      </h2>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <p class="text-gray-500">Override Bonus</p>
+      <h2 class="text-2xl font-bold text-orange-500">
+        ₹{{ data?.incentive?.override }}
+      </h2>
+    </div>
+
+  </div>
+
+  <div class="bg-white p-6 rounded-2xl shadow mb-6">
+
+    <h2 class="text-lg font-semibold mb-4">Performance Details</h2>
+
+    <div class="grid md:grid-cols-3 gap-4">
+
+      <div>
+        <p class="text-gray-500">Target</p>
+        <p class="font-semibold">₹{{ data?.target }}</p>
+      </div>
+
+      <div>
+        <p class="text-gray-500">Achieved NR</p>
+        <p class="font-semibold text-green-600">
+          ₹{{ data?.achievedNR }}
+        </p>
+      </div>
+
+      <div>
+        <p class="text-gray-500">Achievement Multiple</p>
+        <p class="font-semibold">
+          {{ data?.achievementMultiple }}x
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="bg-white p-6 rounded-2xl shadow">
+
+    <h2 class="text-lg font-semibold mb-4">Final Salary Impact</h2>
+
+    <table class="w-full text-left text-sm">
+
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="p-3">Component</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr class="border-t">
+          <td class="p-3">Gross Salary</td>
+          <td>₹{{ data?.gross }}</td>
+        </tr>
+        <tr class="border-t">
+          <td class="p-3">Monthly Incentive Accrual</td>
+          <td class="text-green-600">
+            ₹{{ data?.incentive?.monthlyIncentiveAccrual }}
+          </td>
+        </tr>
+        <tr class="border-t font-bold">
+          <td class="p-3">Net Salary</td>
+          <td class="text-[#16A34A]">
+            ₹{{ data?.netSalary }}
+          </td>
+        </tr>
+      </tbody>
+
+    </table>
+
+  </div>
+
+</div>
+

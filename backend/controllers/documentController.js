@@ -1,0 +1,722 @@
+const Document = require('../models/Document');
+const User = require('../models/User');
+const cloudinary = require('cloudinary').v2;
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const asyncHandler = require('../middlewares/asyncHandler');
+const sendEmail = require('../utils/sendEmail');
+const { getCompanyLogoBuffer } = require('../utils/branding');
+const { generateOfferLetterPdf, generateJoiningAgreementPdf, generateDocumentHtml } = require('../services/documentGenerator.service');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// @desc    Generate and upload PDF
+// @route   POST /api/documents/generate/:type/:employeeId
+// @access  Private/Admin/HR
+exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
+  const { type, employeeId } = req.params;
+
+  // 1. Fetch employee
+  const employee = await User.findById(employeeId).populate('departmentId').lean();
+
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  // 2. Generate PDF locally
+  const fileName = `${type}_${employeeId}_${Date.now()}.pdf`;
+  const filePath = path.join(__dirname, '../utils', fileName);
+  
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  const writeStream = fs.createWriteStream(filePath);
+  doc.pipe(writeStream);
+
+  const logoBuffer = await getCompanyLogoBuffer();
+  let pageNo = 1;
+
+  const addWatermark = () => {
+    doc.save();
+    doc.fillColor('#0F172A');
+    doc.opacity(0.06);
+    doc.rotate(-25, { origin: [doc.page.width / 2, doc.page.height / 2] });
+    doc.fontSize(80).font('Helvetica-Bold').text('PROP NINJA', 0, doc.page.height / 2 - 80, { align: 'center' });
+    doc.opacity(1);
+    doc.restore();
+  };
+
+  const addHeader = () => {
+    const y = 30;
+    if (logoBuffer) {
+      try {
+        doc.image(logoBuffer, 50, y, { height: 32 });
+      } catch {}
+    } else {
+      doc.fontSize(18).fillColor('#0F172A').text('PROP', 50, y, { continued: true });
+      doc.fillColor('#16A34A').text('NINJA');
+      doc.fillColor('black');
+    }
+
+    doc.moveTo(50, y + 44).lineTo(doc.page.width - 50, y + 44).strokeColor('#E2E8F0').stroke();
+    doc.moveDown(2);
+  };
+
+  const addFooter = () => {
+    const y = doc.page.height - 40;
+    doc.fontSize(8).fillColor('#64748B').text('PropNinja HR • Confidential', 50, y, { align: 'left' });
+    doc.fontSize(8).fillColor('#64748B').text(`Page ${pageNo}`, 50, y, { align: 'right' });
+    doc.fillColor('black');
+  };
+
+  if (type === 'offer_letter') {
+    // --- Page 1: Offer Letter ---
+    addHeader();
+    addWatermark();
+    
+    doc.moveDown(2);
+    doc.fontSize(16).fillColor('black').text('OFFER LETTER', { align: 'center', underline: true });
+    doc.moveDown();
+
+    const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+    doc.fontSize(10).font('Helvetica-Bold').text(`Date: ${today}`);
+    doc.moveDown();
+
+    doc.text('To');
+    doc.text(`Ms./Mr. ${employee.fullName}`);
+    doc.text(employee.address || 'Address not provided');
+    doc.moveDown();
+
+    doc.text('Sub: Offer Letter');
+    doc.text(`Dear ${employee.fullName},`);
+    doc.moveDown();
+
+    doc.font('Helvetica').text(`We are pleased to offer you the post of ${employee.designation} based at Propninja consulting private limited. The compensation structure is enclosed for your reference as Annexure.`, { align: 'justify' });
+    doc.moveDown();
+
+    doc.text('Your employment with the Company will be subject to strict adherence to the policies and procedures of the Company. This offer is subjected to background verification and medical fitness.', { align: 'justify' });
+    doc.moveDown();
+
+    doc.text('On acceptance of the terms of conditions as per this offer letter, you will be able to terminate your employment with the Company by giving one month notice to the Company. You shall not be eligible to avail leave during the notice period.', { align: 'justify' });
+    doc.moveDown();
+
+    doc.text('We welcome you to join the Company and would be happy if you can sign the duplicate copy of this letter in token of your acceptance of the offer of employment with the Company.', { align: 'justify' });
+    doc.moveDown();
+
+    doc.text('If you have any question, please clarify from the undersigned.');
+    doc.moveDown(2);
+
+    doc.font('Helvetica-Bold').text('With regards,');
+    doc.text('Team HR');
+    doc.moveDown(3);
+
+    doc.font('Helvetica').text('I accept the aforesaid terms & conditions and this offer of employment. I shall keep the contents of this document confidential.', { align: 'justify' });
+    doc.moveDown();
+
+    const joiningDate = employee.joiningDate ? new Date(employee.joiningDate).toLocaleDateString('en-GB') : '________________';
+    doc.font('Helvetica-Bold').text(`I will join on ${joiningDate}.`);
+    doc.text(`Name: ${employee.fullName}`);
+    doc.moveDown(2);
+
+    doc.text('Signature: __________________________', { align: 'right' });
+    doc.text(`${employee.fullName}`, { align: 'right' });
+
+    // --- Page 2: Annexure ---
+    addFooter();
+    doc.addPage();
+    pageNo += 1;
+    addHeader();
+    addWatermark();
+    doc.moveDown(2);
+
+    doc.fontSize(14).font('Helvetica-Bold').text('Annexure', { align: 'center' });
+    doc.moveDown();
+
+    // Calculate Salary Components (Annual & Monthly)
+    const ctcAnnual = employee.salary?.ctc || 0;
+    const ctcMonthly = Math.round(ctcAnnual / 12);
+
+    const basicAnnual = Math.round(ctcAnnual * 0.5);
+    const hraAnnual = Math.round(ctcAnnual * 0.2);
+    const conveyanceAnnual = Math.round(ctcAnnual * 0.1);
+    const specialAllowanceAnnual = Math.max(0, ctcAnnual - basicAnnual - hraAnnual - conveyanceAnnual);
+
+    const basicMonthly = Math.round(basicAnnual / 12);
+    const hraMonthly = Math.round(hraAnnual / 12);
+    const convMonthly = Math.round(conveyanceAnnual / 12);
+    const saMonthly = Math.round(specialAllowanceAnnual / 12);
+
+    // Table
+    const tableTop = 200;
+    const col1 = 50;
+    const col2 = 300;
+    const col3 = 450;
+    const rowHeight = 25;
+
+    doc.fontSize(10);
+
+    // Header Row
+    doc.rect(col1, tableTop, 500, rowHeight).fillAndStroke('#cccccc', '#000000');
+    doc.fillColor('black').font('Helvetica-Bold');
+    doc.text('Components*', col1 + 10, tableTop + 8);
+    doc.text('Monthly (INR)', col2 + 10, tableTop + 8);
+    doc.text('Annual (INR)', col3 + 10, tableTop + 8);
+
+    let y = tableTop + rowHeight;
+
+    const drawRow = (label, monthly, annual) => {
+        doc.rect(col1, y, 500, rowHeight).stroke();
+        doc.font('Helvetica');
+        doc.text(label, col1 + 10, y + 8);
+        if (monthly !== '') doc.text(monthly.toString(), col2 + 10, y + 8);
+        if (annual !== '') doc.text(annual.toString(), col3 + 10, y + 8);
+        y += rowHeight;
+    };
+
+    drawRow('Basic', basicMonthly, basicAnnual);
+    drawRow('HRA', hraMonthly, hraAnnual);
+    drawRow('Special Allowance', saMonthly, specialAllowanceAnnual);
+    drawRow('Conveyance', convMonthly, conveyanceAnnual);
+    drawRow('Medical', '', '');
+    drawRow('LTA', '', '');
+    drawRow('PF (Employer Contribution)', '', '');
+    drawRow('Bonus (Annual)', '', '');
+    
+    // Total Row
+    drawRow('Total', '', ''); // Can sum up if needed, example shows empty
+
+    // CTC Row
+    doc.font('Helvetica-Bold');
+    drawRow('CTC', ctcMonthly, ctcAnnual);
+
+    doc.moveDown(2);
+    doc.fontSize(8).font('Helvetica-Oblique').text('* - The components can vary depending on the company and the way it would want to structure the salary.', col1, y + 10);
+
+    // Footer Signature
+    doc.moveDown(10);
+    doc.fontSize(10).font('Helvetica-Bold');
+    doc.text('Signature: __________________________', { align: 'right' });
+    doc.text(`${employee.fullName}`, { align: 'right' });
+
+    addFooter();
+  } else {
+    // Default / Joining Letter (keep simple for now)
+    addHeader();
+    addWatermark();
+    doc.fontSize(20).text(type.replace('_', ' ').toUpperCase(), { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`);
+    doc.moveDown();
+    doc.text(`Employee: ${employee.fullName}`);
+    doc.text(`Designation: ${employee.designation}`);
+    doc.text(`Department: ${employee.departmentId?.name || 'N/A'}`);
+    doc.moveDown();
+    doc.text(`This is a computer-generated ${type.replace('_', ' ')} for ${employee.fullName}.`);
+    addFooter();
+  }
+
+  doc.end();
+
+  await new Promise((resolve, reject) => {
+    writeStream.on('finish', resolve);
+    writeStream.on('error', reject);
+  });
+
+  // 3. Upload to Cloudinary
+  const result = await cloudinary.uploader.upload(filePath, {
+    resource_type: 'raw',
+    folder: 'documents',
+    public_id: fileName
+  });
+
+  // 4. Save to DB
+  const document = await Document.create({
+    employeeId: employee._id,
+    type,
+    url: result.secure_url,
+    uploadedBy: req.user.id
+  });
+
+  // Update User profile with the document link
+  const updateField = {};
+  // Map 'offer_letter' -> 'offerLetter' for schema consistency if needed
+  // Frontend sends 'offer_letter' in params but schema has 'offerLetter'
+  let schemaKey = type;
+  if (type === 'offer_letter') schemaKey = 'offerLetter';
+  if (type === 'joining_letter') schemaKey = 'joiningLetter';
+
+  updateField[`documents.${schemaKey}`] = {
+    url: result.secure_url,
+    uploadedAt: Date.now()
+  };
+
+  await User.findByIdAndUpdate(employeeId, { $set: updateField });
+
+  // 5. Cleanup local file
+  fs.unlinkSync(filePath);
+
+  res.status(201).json({ success: true, data: document });
+});
+
+// @desc    Upload document (Base64)
+// @route   POST /api/documents/upload
+// @access  Private/Admin/HR
+exports.uploadDocument = asyncHandler(async (req, res, next) => {
+  const { employeeId, type, file } = req.body;
+
+  if (!file) {
+    return res.status(400).json({ success: false, error: 'Please upload a file' });
+  }
+
+  // Basic file validation (expects data URL for PDFs)
+  if (typeof file === 'string') {
+    if (!file.startsWith('data:application/pdf;base64,')) {
+      return res.status(400).json({ success: false, error: 'Invalid file type: only PDF allowed' });
+    }
+    // Rough size check (base64 length ~1.37x real size). Limit ~10MB
+    const approxBytes = Math.floor((file.length - 'data:application/pdf;base64,'.length) * 0.75);
+    if (approxBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'File too large (max 10MB)' });
+    }
+  }
+
+  // Upload to Cloudinary
+  const result = await cloudinary.uploader.upload(file, {
+    folder: 'documents',
+    resource_type: 'auto'
+  });
+
+  // Update User model directly for standard docs
+  const updateField = {};
+  // Map frontend types to schema keys if needed, but they should match
+  // Schema keys: aadhar, pan, degreeCertificate, photo, offerLetter, joiningLetter
+  
+  // Ensure we update the nested field correctly
+  updateField[`documents.${type}`] = {
+    url: result.secure_url,
+    uploadedAt: Date.now()
+  };
+
+  const user = await User.findByIdAndUpdate(employeeId, {
+    $set: updateField
+  }, { new: true });
+
+  res.status(200).json({ success: true, data: user, url: result.secure_url });
+});
+
+exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
+  const {
+    fullName,
+    fatherName,
+    email,
+    salutation,
+    address,
+    designation,
+    departmentId,
+    teamId,
+    joiningDate,
+    ctc,
+    panNumber,
+    aadharNumber,
+    hrSignature // New Field
+  } = req.body;
+
+  if (!fullName || !email || !designation) {
+    return res.status(400).json({ success: false, error: 'Please provide fullName, email and designation' });
+  }
+
+  // --- DUPLICATE CHECK ---
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    // Check if an offer letter already exists for this user
+    const existingDoc = await Document.findOne({
+      employeeId: existingUser._id,
+      type: 'offer_letter',
+      status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
+    });
+
+    if (existingDoc) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `An Offer Letter has already been sent to ${email} (Status: ${existingDoc.status}).` 
+      });
+    }
+  }
+
+  const randomPassword = crypto.randomBytes(12).toString('hex');
+
+  const update = {};
+  if (fullName) update.fullName = fullName;
+  if (email) update.email = email;
+  if (address) update.address = address;
+  if (designation) update.designation = designation;
+  if (joiningDate) update.joiningDate = joiningDate;
+  if (departmentId) update.departmentId = departmentId;
+  if (teamId) update.teamId = teamId;
+  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = Number(ctc);
+  const { encryptField } = require('../utils/fieldCrypto');
+  if (panNumber) update['personalDetails.panNumber'] = encryptField(panNumber);
+  if (aadharNumber) update['personalDetails.aadharNumber'] = encryptField(aadharNumber);
+  if (fatherName) update['personalDetails.fatherName'] = fatherName;
+
+  let user = await User.findOne({ email }).select('_id');
+
+  if (!user) {
+    user = await User.create({
+      fullName,
+      email,
+      password: randomPassword,
+      role: 'employee',
+      level: 'N0',
+      status: 'inactive',
+      address: address || '',
+      designation,
+      departmentId: departmentId || undefined,
+      teamId: teamId || undefined,
+      joiningDate: joiningDate || undefined,
+      salary: { ctc: Number(ctc || 0) },
+      personalDetails: {
+        panNumber: panNumber ? encryptField(panNumber) : '',
+        aadharNumber: aadharNumber ? encryptField(aadharNumber) : '',
+        fatherName: fatherName || ''
+      },
+      companyId: req.user.companyId || 'propninja'
+    });
+  } else {
+    await User.findByIdAndUpdate(user._id, { $set: { ...update, companyId: req.user.companyId || 'propninja' } });
+  }
+
+  const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
+  if (!employee) {
+    return res.status(500).json({ success: false, error: 'Failed to create candidate' });
+  }
+
+  const fileName = `offer_letter_${employee._id}_${Date.now()}.pdf`;
+  const filePath = path.join(__dirname, '../utils', fileName);
+
+  // Use the shared generator service
+  await generateOfferLetterPdf(employee, filePath);
+
+  let pdfUrl = '';
+  try {
+    const uploaded = await cloudinary.uploader.upload(filePath, {
+      resource_type: 'raw',
+      folder: 'documents',
+      public_id: fileName
+    });
+    pdfUrl = uploaded.secure_url;
+  } catch (e) {
+    pdfUrl = '';
+  }
+
+  if (pdfUrl) {
+    await Document.create({
+      employeeId: employee._id,
+      type: 'offer_letter',
+      url: pdfUrl,
+      uploadedBy: req.user.id
+    });
+
+    await User.findByIdAndUpdate(employee._id, {
+      $set: {
+        'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() }
+      }
+    });
+  }
+
+  // --- E-SIGN FLOW ---
+  const token = crypto.randomBytes(32).toString('hex'); // 64 chars
+  const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  const htmlContent = await generateDocumentHtml('offer_letter', employee);
+
+  // Create Document Record
+  await Document.create({
+    employeeId: employee._id,
+    type: 'offer_letter',
+    token,
+    tokenExpiry,
+    htmlContent,
+    status: 'Sent', // Employee hasn't signed yet
+    hrSignature, // Save HR Signature
+    hrSignedAt: hrSignature ? Date.now() : undefined,
+    uploadedBy: req.user.id
+  });
+
+  const signingLink = `${process.env.FRONTEND_URL || 'http://localhost:4200'}/sign/${token}`;
+
+  let emailSent = false;
+  let emailError = '';
+  try {
+    await sendEmail({
+      email: employee.email,
+      subject: 'FINAL OFFER LETTER FROM PRONINJA CONSULTING PRIVATE LIMITED',
+      message: `Please review and sign your offer letter here: ${signingLink}`,
+      html: `
+        <p>Dear ${employee.fullName},</p>
+        <p>Please find attached your offer letter.</p>
+        <p>You are required to digitally sign it using the link below.</p>
+        <p><a href="${signingLink}" style="background-color: #16A34A; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign Offer Letter</a></p>
+        ${pdfUrl ? `<p>You can also download the PDF copy here: <a href="${pdfUrl}">${pdfUrl}</a></p>` : ''}
+        <p>Regards,<br/>Team HR</p>
+      `,
+      attachments: [
+        {
+          filename: 'Offer Letter.pdf',
+          path: filePath,
+          contentType: 'application/pdf'
+        }
+      ]
+    });
+    emailSent = true;
+  } catch (e) {
+    emailSent = false;
+    emailError = e && e.message ? e.message : 'Email could not be sent';
+  }
+
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      employeeId: employee._id,
+      emailSent,
+      pdfUrl,
+      emailError
+    }
+  });
+});
+
+exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
+  const {
+    fullName,
+    fatherName,
+    email,
+    salutation,
+    address,
+    designation,
+    departmentId,
+    teamId,
+    joiningDate,
+    ctc,
+    panNumber,
+    aadharNumber,
+    hrSignature // New Field
+  } = req.body;
+
+  if (!fullName || !email || !designation) {
+    return res.status(400).json({ success: false, error: 'Please provide fullName, email and designation' });
+  }
+
+  // --- DUPLICATE CHECK ---
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    // Check if a joining agreement already exists for this user
+    const existingDoc = await Document.findOne({
+      employeeId: existingUser._id,
+      type: 'joining_agreement',
+      status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
+    });
+
+    if (existingDoc) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `A Joining Agreement has already been sent to ${email} (Status: ${existingDoc.status}).` 
+      });
+    }
+  }
+
+  const randomPassword = crypto.randomBytes(12).toString('hex');
+
+  const update = {};
+  if (fullName) update.fullName = fullName;
+  if (email) update.email = email;
+  if (address) update.address = address;
+  if (designation) update.designation = designation;
+  if (joiningDate) update.joiningDate = joiningDate;
+  if (departmentId) update.departmentId = departmentId;
+  if (teamId) update.teamId = teamId;
+  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = Number(ctc);
+  if (panNumber) update['personalDetails.panNumber'] = panNumber;
+  if (aadharNumber) update['personalDetails.aadharNumber'] = aadharNumber;
+  if (fatherName) update['personalDetails.fatherName'] = fatherName;
+
+  let user = await User.findOne({ email }).select('_id');
+
+  if (!user) {
+    user = await User.create({
+      fullName,
+      email,
+      password: randomPassword,
+      role: 'employee',
+      level: 'N0',
+      status: 'inactive',
+      address: address || '',
+      designation,
+      departmentId: departmentId || undefined,
+      teamId: teamId || undefined,
+      joiningDate: joiningDate || undefined,
+      salary: { ctc: Number(ctc || 0) },
+      personalDetails: {
+        panNumber: panNumber || '',
+        aadharNumber: aadharNumber || '',
+        fatherName: fatherName || ''
+      }
+    });
+  } else {
+    await User.findByIdAndUpdate(user._id, { $set: update });
+  }
+
+  const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
+  if (!employee) {
+    return res.status(500).json({ success: false, error: 'Failed to create candidate' });
+  }
+
+  // --- E-SIGN FLOW ---
+  const token = crypto.randomBytes(32).toString('hex'); // 64 chars
+  const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  const htmlContent = await generateDocumentHtml('joining_agreement', employee);
+
+  // Create Document Record
+  const document = await Document.create({
+    employeeId: employee._id,
+    type: 'joining_agreement',
+    token,
+    tokenExpiry,
+    htmlContent,
+    status: 'Sent',
+    hrSignature, // Save HR Signature
+    hrSignedAt: hrSignature ? Date.now() : undefined,
+    uploadedBy: req.user.id
+  });
+
+  const signingLink = `${process.env.FRONTEND_URL || 'http://localhost:4200'}/sign/${token}`;
+
+  let emailSent = false;
+  let emailError = '';
+  try {
+    await sendEmail({
+      email: employee.email,
+      subject: 'Action Required: Sign Joining Agreement - PropNinja',
+      message: `Please sign your joining agreement here: ${signingLink}`,
+      html: `
+        <p>Dear ${employee.fullName},</p>
+        <p>Please click the link below to review and sign your Joining Agreement.</p>
+        <p><a href="${signingLink}" style="background-color: #16A34A; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign Document</a></p>
+        <p>This link expires in 7 days.</p>
+        <p>Regards,<br/>Team HR</p>
+      `
+    });
+    emailSent = true;
+  } catch (e) {
+    emailSent = false;
+    emailError = e && e.message ? e.message : 'Email could not be sent';
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      employeeId: employee._id,
+      emailSent,
+      token, // Return token for debug/testing
+      emailError
+    }
+  });
+});
+
+// @desc    Sign document and email it
+// @route   POST /api/documents/sign
+// @access  Private
+exports.signAndSendDocument = asyncHandler(async (req, res, next) => {
+  const { documentType, signatureData } = req.body;
+  const employeeId = req.user.id; // From auth middleware
+
+  const employee = await User.findById(employeeId).lean();
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
+
+  // Create PDF
+  const doc = new PDFDocument({ margin: 50 });
+  const fileName = `${documentType}_signed_${employeeId}_${Date.now()}.pdf`;
+  const filePath = path.join(__dirname, '../utils', fileName);
+  const writeStream = fs.createWriteStream(filePath);
+  
+  doc.pipe(writeStream);
+
+  // Document Content (Simplified Offer Letter)
+  doc.fontSize(24).text('OFFER LETTER', { align: 'center' });
+  doc.moveDown();
+  doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`);
+  doc.moveDown();
+  doc.text(`Dear ${employee.fullName},`);
+  doc.moveDown();
+  doc.text('We are pleased to offer you the position at PropNinja HR. We are excited to have you on board!');
+  doc.moveDown();
+  doc.text('Please sign below to accept this offer.');
+  doc.moveDown(4);
+
+  // Embed Signature
+  if (signatureData) {
+    // signatureData is "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+    const base64Data = signatureData.split(',')[1];
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+    
+    doc.text('Signature:', { underline: true });
+    doc.moveDown(0.5);
+    doc.image(imgBuffer, { width: 150 }); // Embed image
+    doc.moveDown();
+    doc.text(employee.fullName);
+  }
+
+  doc.end();
+
+  await new Promise((resolve, reject) => {
+    writeStream.on('finish', resolve);
+    writeStream.on('error', reject);
+  });
+
+  // Send Email
+  try {
+    await sendEmail({
+      email: employee.email,
+      subject: `Signed ${documentType.replace('_', ' ')}`,
+      message: `Please find attached your signed ${documentType.replace('_', ' ')}.`,
+      attachments: [
+        {
+          filename: fileName,
+          path: filePath,
+          contentType: 'application/pdf'
+        }
+      ]
+    });
+
+    // Cleanup
+    fs.unlinkSync(filePath);
+
+    res.status(200).json({ success: true, message: 'Document signed and emailed successfully' });
+  } catch (err) {
+    // Cleanup even on error
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Email could not be sent' });
+  }
+});
+
+// @desc    Get all documents for an employee
+// @route   GET /api/documents/:employeeId
+// @access  Private
+exports.getDocuments = asyncHandler(async (req, res, next) => {
+  const documents = await Document.find({ employeeId: req.params.employeeId });
+
+  res.status(200).json({
+    success: true,
+    count: documents.length,
+    data: documents
+  });
+});

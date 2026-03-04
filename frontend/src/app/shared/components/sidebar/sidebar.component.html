@@ -1,0 +1,23 @@
+<aside class="bg-[#0F172A] text-white w-64 h-full flex flex-col">
+
+  <div class="p-6 text-2xl font-bold tracking-wide">
+    PropNinja HR
+  </div>
+
+  <nav class="flex-1 px-4 space-y-2 overflow-y-auto">
+    <a *ngFor="let item of filteredMenu"
+       [routerLink]="item.link"
+       routerLinkActive="bg-[#16A34A]"
+       class="flex items-center px-4 py-3 rounded-xl hover:bg-[#16A34A] transition cursor-pointer">
+      {{ item.label }}
+    </a>
+  </nav>
+
+  <div class="p-4 border-t border-gray-700">
+    <button (click)="logout()"
+            class="w-full bg-red-600 py-2 rounded-lg text-white font-medium hover:bg-red-700 transition">
+      Logout
+    </button>
+  </div>
+
+</aside>

@@ -1,0 +1,102 @@
+<div class="max-w-3xl mx-auto bg-white p-6 rounded-2xl shadow">
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-bold text-[#0F172A]">Send Offer Letter</h2>
+  </div>
+
+  <form (ngSubmit)="initiateSend()" class="space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Ms./Mr.</label>
+        <select name="salutation" [(ngModel)]="form.salutation" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="Mr.">Mr.</option>
+          <option value="Ms.">Ms.</option>
+          <option value="Mrs.">Mrs.</option>
+        </select>
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Full Name</label>
+        <input type="text" name="fullName" [(ngModel)]="form.fullName" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Father's Name</label>
+        <input type="text" name="fatherName" [(ngModel)]="form.fatherName" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Email</label>
+        <input type="email" name="email" [(ngModel)]="form.email" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Designation</label>
+        <input type="text" name="designation" [(ngModel)]="form.designation" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1 md:col-span-2">
+        <label class="text-sm font-medium text-slate-700">Address</label>
+        <input type="text" name="address" [(ngModel)]="form.address" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Department</label>
+        <select name="departmentId" [(ngModel)]="form.departmentId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="">Select Department</option>
+          <option *ngFor="let dept of departments" [value]="dept._id">{{ dept.name }}</option>
+        </select>
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Sales Team</label>
+        <select name="teamId" [(ngModel)]="form.teamId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="">Select Team</option>
+          <option *ngFor="let team of teams" [value]="team._id">{{ team.name }}</option>
+        </select>
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Joining Date</label>
+        <input type="date" name="joiningDate" [(ngModel)]="form.joiningDate" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">CTC (Annual)</label>
+        <input type="number" name="ctc" [(ngModel)]="form.ctc" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">PAN Number</label>
+        <input type="text" name="panNumber" [(ngModel)]="form.panNumber" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Aadhar Number</label>
+        <input type="text" name="aadharNumber" [(ngModel)]="form.aadharNumber" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+    </div>
+
+    <div *ngIf="error" class="bg-red-50 text-red-700 border border-red-200 p-3 rounded-xl text-sm">
+      {{ error }}
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-4 border-t">
+      <button type="submit" [disabled]="sending" class="bg-[#16A34A] text-white px-6 py-2 rounded-xl font-medium hover:bg-[#15803d] transition disabled:opacity-60 flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+        {{ sending ? 'Sending...' : 'Sign & Send Offer Letter' }}
+      </button>
+    </div>
+  </form>
+
+  <app-signature-pad *ngIf="showSignaturePad" (signed)="onSigned($event)" (cancelled)="onCancelled()"></app-signature-pad>
+
+  <div *ngIf="result" class="mt-6 bg-gray-50 border rounded-xl p-4 text-sm">
+    <div class="flex flex-col gap-2">
+      <div><span class="font-semibold">Email Sent:</span> {{ result.emailSent ? 'Yes' : 'No' }}</div>
+      <div *ngIf="result.pdfUrl"><span class="font-semibold">PDF:</span> <a class="text-blue-600 underline" [href]="result.pdfUrl" target="_blank">Open</a></div>
+      <div><span class="font-semibold">Employee ID:</span> {{ result.employeeId }}</div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,12 @@
+{
+  "name": "prophr",
+  "private": true,
+  "scripts": {
+    "lint": "npm --prefix backend run lint",
+    "backend:test": "npm --prefix backend test",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

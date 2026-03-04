@@ -1,0 +1,91 @@
+<div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="bg-white p-6 rounded-2xl shadow">
+    <h2 class="text-xl font-bold text-[#0F172A] mb-4">Generate Document</h2>
+
+    <div class="space-y-4">
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Employee</label>
+        <select [(ngModel)]="form.employeeId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="">Select Employee</option>
+          <option *ngFor="let e of employees" [value]="e._id">{{ e.fullName }} ({{ e.employeeId }})</option>
+        </select>
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">Document Type</label>
+        <select [(ngModel)]="form.documentType" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="offer">Offer</option>
+          <option value="agreement">Agreement</option>
+          <option value="confidentiality">Confidentiality</option>
+          <option value="esop">ESOP</option>
+          <option value="nda">NDA</option>
+        </select>
+      </div>
+
+      <div class="flex gap-2">
+        <button (click)="generate()" class="border px-4 py-2 rounded-xl hover:bg-slate-50 transition">
+          Generate Preview
+        </button>
+        <button (click)="sendForEsign()" [disabled]="sending || !form.htmlContent || !form.employeeId" class="bg-[#16A34A] text-white px-4 py-2 rounded-xl hover:bg-[#15803d] transition disabled:opacity-60">
+          {{ sending ? 'Sending...' : 'Send for E-Sign' }}
+        </button>
+      </div>
+
+      <div *ngIf="error" class="bg-red-50 text-red-700 border border-red-200 p-3 rounded-xl text-sm">
+        {{ error }}
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-sm font-medium text-slate-700">HTML Editor (HR can edit)</label>
+        <textarea [(ngModel)]="form.htmlContent" (ngModelChange)="updatePreview()" rows="14" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A] font-mono text-xs"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white p-6 rounded-2xl shadow">
+    <h2 class="text-xl font-bold text-[#0F172A] mb-4">Preview</h2>
+    <div class="border rounded-xl p-4 max-h-[70vh] overflow-auto" [innerHTML]="previewHtml"></div>
+  </div>
+
+  <div class="bg-white p-6 rounded-2xl shadow lg:col-span-2">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-[#0F172A]">Pending Countersign</h2>
+      <button (click)="loadPending()" class="border px-4 py-2 rounded-xl hover:bg-slate-50 transition">Refresh</button>
+    </div>
+
+    <div *ngIf="loadingPending" class="text-sm text-gray-500">Loading...</div>
+    <div *ngIf="!loadingPending" class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="p-3 font-semibold text-[#0F172A]">Employee</th>
+            <th class="p-3 font-semibold text-[#0F172A]">Type</th>
+            <th class="p-3 font-semibold text-[#0F172A]">Status</th>
+            <th class="p-3 font-semibold text-[#0F172A]">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let d of pending" class="border-t">
+            <td class="p-3 text-sm">
+              <div class="font-medium">{{ d.employeeId?.fullName }}</div>
+              <div class="text-xs text-gray-500">{{ d.employeeId?.email }}</div>
+            </td>
+            <td class="p-3 text-sm capitalize">{{ d.documentType }}</td>
+            <td class="p-3 text-sm">{{ d.status }}</td>
+            <td class="p-3 text-sm">
+              <button (click)="openCountersign(d._id)" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition">
+                Countersign
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="pending.length === 0" class="border-t">
+            <td class="p-3 text-sm text-gray-500" colspan="4">No pending documents.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<app-signature-pad *ngIf="showSignaturePad" (signed)="onSigned($event)" (cancelled)="onCancelled()"></app-signature-pad>
+

@@ -1,0 +1,99 @@
+<div class="p-6 bg-[#F1F5F9] min-h-screen">
+
+  <h1 class="text-2xl font-bold text-[#0F172A] mb-6">
+    Incentive Slab Rule Builder
+  </h1>
+
+  <div class="grid lg:grid-cols-2 gap-6">
+
+    <!-- FORM -->
+    <div class="bg-white p-6 rounded-2xl shadow h-fit">
+      <h2 class="text-lg font-bold mb-4">{{ isEditing ? 'Edit Rule' : 'Create New Rule' }}</h2>
+      <form (ngSubmit)="saveRule()" class="grid md:grid-cols-2 gap-6">
+
+        <div>
+          <label class="block text-sm text-gray-500 mb-1">Role</label>
+          <select [(ngModel)]="newSlab.role" name="role" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+            <option *ngFor="let r of roles" [value]="r">{{ r }}</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-500 mb-1">Eligibility Target (₹)</label>
+          <input type="number" [(ngModel)]="newSlab.eligibilityTarget" name="eligibilityTarget" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-500 mb-1">Base Slab %</label>
+          <input type="number" [(ngModel)]="newSlab.basePercentage" name="basePercentage" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-500 mb-1">Above Target %</label>
+          <input type="number" [(ngModel)]="newSlab.abovePercentage" name="abovePercentage" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-500 mb-1">ESOP %</label>
+          <input type="number" [(ngModel)]="newSlab.esopPercentage" name="esopPercentage" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+        </div>
+
+        <div class="flex items-center mt-6">
+          <input type="checkbox" [(ngModel)]="newSlab.isActive" name="isActive" class="mr-2 h-5 w-5 text-[#16A34A] focus:ring-[#16A34A] border-gray-300 rounded">
+          <span>Enable Slab</span>
+        </div>
+
+        <div class="md:col-span-2 flex gap-3">
+          <button type="submit" class="bg-[#16A34A] text-white px-6 py-3 rounded-xl w-full hover:bg-[#15803d] transition font-medium">
+            {{ isEditing ? 'Update Rule' : 'Save Rule' }}
+          </button>
+          <button type="button" *ngIf="isEditing" (click)="resetForm()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-xl w-full hover:bg-gray-300 transition font-medium">
+            Cancel
+          </button>
+        </div>
+
+      </form>
+    </div>
+
+    <!-- LIST -->
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <h2 class="text-lg font-bold mb-4">Existing Rules</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="p-3">Role</th>
+              <th class="p-3">Target</th>
+              <th class="p-3">Base %</th>
+              <th class="p-3">Above %</th>
+              <th class="p-3">Status</th>
+              <th class="p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let slab of slabs" class="border-t hover:bg-gray-50">
+              <td class="p-3 font-medium">{{ slab.role }}</td>
+              <td class="p-3">₹{{ slab.eligibilityTarget }}</td>
+              <td class="p-3">{{ slab.basePercentage }}%</td>
+              <td class="p-3">{{ slab.abovePercentage }}%</td>
+              <td class="p-3">
+                <span [class]="slab.isActive ? 'text-green-600 font-bold' : 'text-gray-400'">
+                  {{ slab.isActive ? 'Active' : 'Inactive' }}
+                </span>
+              </td>
+              <td class="p-3 flex gap-2">
+                <button (click)="editSlab(slab)" class="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
+                <button (click)="deleteSlab(slab._id)" class="text-red-600 hover:text-red-800 font-medium">Del</button>
+              </td>
+            </tr>
+            <tr *ngIf="slabs.length === 0">
+              <td colspan="6" class="p-4 text-center text-gray-500">No slabs found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>

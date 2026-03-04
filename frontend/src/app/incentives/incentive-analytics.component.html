@@ -1,0 +1,37 @@
+<div class="p-6 bg-[#F1F5F9] min-h-screen">
+
+  <h1 class="text-2xl font-bold text-[#0F172A] mb-6">
+    Incentive Analytics
+  </h1>
+
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <h2 class="text-lg font-bold text-gray-700 mb-4">Quarterly Payout Trends</h2>
+      <canvas baseChart
+        [data]="barChartData"
+        [options]="barChartOptions"
+        [type]="barChartType"
+        [legend]="barChartLegend">
+      </canvas>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <h2 class="text-lg font-bold text-gray-700 mb-4">Payout Summary</h2>
+      <div class="space-y-4">
+        <div class="flex justify-between items-center p-4 bg-green-50 rounded-xl">
+          <span class="text-green-800 font-medium">Total Cash Paid (YTD)</span>
+          <span class="text-2xl font-bold text-green-700">₹1,47,000</span>
+        </div>
+        <div class="flex justify-between items-center p-4 bg-purple-50 rounded-xl">
+          <span class="text-purple-800 font-medium">Total ESOP Value (YTD)</span>
+          <span class="text-2xl font-bold text-purple-700">₹35,000</span>
+        </div>
+        <div class="flex justify-between items-center p-4 bg-blue-50 rounded-xl">
+          <span class="text-blue-800 font-medium">Top Performer Role</span>
+          <span class="text-2xl font-bold text-blue-700">N2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

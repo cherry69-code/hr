@@ -1,0 +1,58 @@
+<div class="min-h-screen bg-slate-50 p-4">
+  <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow overflow-hidden">
+    <div class="p-6 border-b flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-[#0F172A]">E-Sign Document</h1>
+        <p class="text-sm text-slate-500">Please review and sign below</p>
+      </div>
+      <div class="h-10 flex items-center gap-2">
+        <img src="assets/propninja-logo.png" alt="PropNinja" class="h-full object-contain">
+        <span class="text-lg font-bold text-[#0F172A]">PropNinja</span>
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div *ngIf="loading" class="text-sm text-gray-500">Loading...</div>
+      <div *ngIf="error" class="bg-red-50 text-red-700 border border-red-200 p-3 rounded-xl text-sm">
+        {{ error }}
+      </div>
+
+      <div *ngIf="!loading && !error && !signed" class="space-y-4">
+        <h3 class="font-bold text-gray-700">Document Preview</h3>
+        <div class="border rounded-xl p-4 max-h-[60vh] overflow-auto bg-gray-50" [innerHTML]="html"></div>
+
+        <div class="bg-blue-50 p-4 rounded-xl border border-blue-100">
+            <label class="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="agreed" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
+            <span class="text-sm font-medium text-slate-700">I have read and agree to the terms and conditions of this document.</span>
+            </label>
+        </div>
+
+        <div class="flex justify-end">
+          <button (click)="startSign()"
+            [disabled]="!agreed"
+            [class.opacity-50]="!agreed"
+            class="bg-[#16A34A] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#15803d] transition flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            Sign Document
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="signed" class="text-center py-12">
+        <div class="bg-green-100 text-green-800 p-6 rounded-2xl inline-block mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Signed Successfully!</h2>
+        <p class="text-gray-600">Thank you for signing the document. You can close this window.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<app-signature-pad *ngIf="showSignaturePad" (signed)="onSigned($event)" (cancelled)="onCancelled()"></app-signature-pad>
+<app-toast></app-toast>

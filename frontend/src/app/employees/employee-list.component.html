@@ -1,0 +1,152 @@
+<div class="bg-white p-6 rounded-2xl shadow">
+
+  <div class="flex justify-between items-center mb-6">
+    <h2 class="text-xl font-bold text-[#0F172A]">Employees</h2>
+    <button (click)="openAddModal()" class="bg-[#16A34A] text-white px-4 py-2 rounded-xl font-medium hover:bg-[#15803d] transition shadow-sm">
+      Add Employee
+    </button>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse">
+
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="p-3 font-semibold text-[#0F172A]">Name</th>
+          <th class="p-3 font-semibold text-[#0F172A]">Role/Level</th>
+          <th class="p-3 font-semibold text-[#0F172A]">Department</th>
+          <th class="p-3 font-semibold text-[#0F172A]">Manager</th>
+          <th class="p-3 font-semibold text-[#0F172A]">Status</th>
+          <th class="p-3 font-semibold text-[#0F172A]">Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr *ngFor="let emp of employees" class="border-t hover:bg-gray-50 transition-colors">
+          <td class="p-3 font-medium text-[#0F172A]">
+            <div>{{ emp.fullName }}</div>
+            <div class="text-xs text-gray-500 font-normal">{{ emp.employeeId }}</div>
+            <div class="text-xs text-gray-400 font-normal">{{ emp.designation }}</div>
+          </td>
+          <td class="p-3 text-gray-600">
+             <div class="capitalize">{{ emp.role }}</div>
+             <div class="text-xs text-blue-600 font-semibold">{{ emp.level }}</div>
+          </td>
+          <td class="p-3 text-gray-600">{{ emp.departmentId?.name }}</td>
+          <td class="p-3 text-gray-600 text-sm">
+             {{ emp.reportingManagerId?.fullName || '-' }}
+          </td>
+          <td class="p-3">
+            <span class="text-green-600 font-semibold capitalize">{{ emp.status }}</span>
+          </td>
+          <td class="p-3">
+            <div class="flex flex-col gap-1">
+              <button (click)="viewProfile(emp._id)" class="text-indigo-600 hover:text-indigo-800 font-medium transition text-left text-sm">Profile / Docs</button>
+              <button (click)="openEditModal(emp)" class="text-blue-600 hover:text-blue-800 font-medium transition text-left text-sm">Edit</button>
+              <button (click)="generateOfferLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Offer Letter</button>
+              <button (click)="generateJoiningLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Joining Letter</button>
+              <button (click)="deleteEmployee(emp._id)" class="text-red-600 hover:text-red-800 font-medium transition text-left text-sm">Delete</button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+
+    </table>
+  </div>
+
+  <!-- Add/Edit Employee Modal -->
+  <div *ngIf="showAddModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-[#0F172A]">{{ isEditing ? 'Edit Employee' : 'Add New Employee' }}</h2>
+        <button (click)="closeModal()" class="text-slate-400 hover:text-slate-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form (ngSubmit)="saveEmployee()" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Full Name</label>
+            <input type="text" name="fullName" [(ngModel)]="newEmployee.fullName" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Email</label>
+            <input type="email" name="email" [(ngModel)]="newEmployee.email" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          </div>
+          <div class="space-y-1 md:col-span-2">
+            <label class="text-sm font-medium text-slate-700">Password (optional)</label>
+            <input type="text" name="password" [(ngModel)]="newEmployee.password" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]" placeholder="Leave blank to send reset link">
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Role</label>
+            <select name="role" [(ngModel)]="newEmployee.role" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+              <option value="employee">Employee</option>
+              <option value="manager">Manager</option>
+              <option value="hr">HR</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Level</label>
+            <select name="level" [(ngModel)]="newEmployee.level" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+              <option value="N0">N0 (Associate)</option>
+              <option value="N1">N1 (Manager)</option>
+              <option value="N2">N2 (Senior Manager)</option>
+              <option value="N3">N3 (Director/VP)</option>
+              <option value="PnL">P&L Head</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Designation</label>
+            <input type="text" name="designation" [(ngModel)]="newEmployee.designation" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">Department</label>
+            <select name="departmentId" [(ngModel)]="newEmployee.departmentId" required class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+              <option value="">Select Department</option>
+              <option *ngFor="let dept of departments" [value]="dept._id">{{ dept.name }}</option>
+            </select>
+          </div>
+          <div class="space-y-1 md:col-span-2">
+            <label class="text-sm font-medium text-slate-700">Reporting Manager</label>
+            <select name="reportingManagerId" [(ngModel)]="newEmployee.reportingManagerId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+              <option value="">Select Reporting Manager</option>
+              <option *ngFor="let mgr of managers" [value]="mgr._id">
+                {{ mgr.fullName }} ({{ mgr.designation }} - {{ mgr.level }})
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1 md:col-span-2">
+            <label class="text-sm font-medium text-slate-700">Team</label>
+            <select name="teamId" [(ngModel)]="newEmployee.teamId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+              <option value="">Select Team</option>
+              <option *ngFor="let team of teams" [value]="team._id">{{ team.name }}</option>
+            </select>
+          </div>
+        </div>
+
+        <hr class="border-slate-200">
+        <h3 class="font-bold text-[#0F172A]">Salary Structure</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">CTC (Annual)</label>
+            <input type="number" name="ctc" [(ngModel)]="newEmployee.salary.ctc" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          </div>
+        </div>
+
+        <!-- Removed Geofence Inputs as requested -->
+
+        <div class="flex justify-end gap-3 pt-4 border-t">
+          <button type="button" (click)="closeModal()" class="px-4 py-2 border rounded-xl hover:bg-slate-50 transition">Cancel</button>
+          <button type="submit" class="bg-[#16A34A] text-white px-6 py-2 rounded-xl font-medium hover:bg-[#15803d] transition">
+            {{ isEditing ? 'Update' : 'Create' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>

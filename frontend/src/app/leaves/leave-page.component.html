@@ -1,0 +1,129 @@
+<div class="max-w-lg mx-auto bg-white p-6 rounded-2xl shadow">
+
+  <h2 class="text-xl font-bold mb-4 text-[#0F172A]">
+    Apply Leave
+  </h2>
+
+  <form (ngSubmit)="applyLeave()" class="space-y-4">
+
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Leave Type</label>
+      <select [(ngModel)]="leaveForm.leaveType" name="leaveType" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A] appearance-none bg-white">
+        <option value="Sick Leave">Sick Leave</option>
+        <option value="Casual Leave">Casual Leave</option>
+        <option value="Paid Leave">Paid Leave</option>
+        <option value="Unpaid Leave">Unpaid Leave</option>
+      </select>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">From Date</label>
+        <input type="date" [(ngModel)]="leaveForm.fromDate" name="fromDate" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">To Date</label>
+        <input type="date" [(ngModel)]="leaveForm.toDate" name="toDate" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Reason</label>
+      <textarea [(ngModel)]="leaveForm.reason" name="reason" placeholder="Reason for leave..."
+        class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A] h-24"></textarea>
+    </div>
+
+    <button type="submit" class="w-full bg-[#16A34A] text-white py-3 rounded-xl font-bold hover:bg-[#15803d] transition shadow-sm">
+      Submit Application
+    </button>
+
+  </form>
+
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+  <!-- My Leaves -->
+  <div class="bg-white p-6 rounded-2xl shadow overflow-x-auto">
+    <h2 class="text-lg font-bold text-[#0F172A] mb-4">My Leave History</h2>
+    <table class="w-full text-left">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Type</th>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Duration</th>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let leave of myLeaves" class="border-t">
+          <td class="p-3 text-sm font-medium text-gray-800">{{ leave.leaveType }}</td>
+          <td class="p-3 text-sm text-gray-600">
+            {{ leave.fromDate | date:'MMM d' }} - {{ leave.toDate | date:'MMM d' }}
+          </td>
+          <td class="p-3">
+            <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase"
+              [ngClass]="{
+                'bg-yellow-100 text-yellow-700': leave.status === 'pending',
+                'bg-green-100 text-green-700': leave.status === 'approved',
+                'bg-red-100 text-red-700': leave.status === 'rejected'
+              }">
+              {{ leave.status }}
+            </span>
+          </td>
+        </tr>
+        <tr *ngIf="myLeaves.length === 0">
+          <td colspan="3" class="p-4 text-center text-sm text-gray-500">No leave history found.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Team Leaves (For Managers/Admin) -->
+  <div *ngIf="role !== 'employee'" class="bg-white p-6 rounded-2xl shadow overflow-x-auto">
+    <h2 class="text-lg font-bold text-[#0F172A] mb-4">Team Requests</h2>
+    <table class="w-full text-left">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Employee</th>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Details</th>
+          <th class="p-3 text-xs font-bold text-gray-500 uppercase">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let leave of teamLeaves" class="border-t">
+          <td class="p-3">
+            <div class="text-sm font-medium text-gray-900">{{ leave.employeeId?.fullName }}</div>
+            <div class="text-xs text-gray-500">{{ leave.leaveType }}</div>
+          </td>
+          <td class="p-3 text-sm text-gray-600">
+            {{ leave.fromDate | date:'MMM d' }} - {{ leave.toDate | date:'MMM d' }}
+            <div class="text-xs italic mt-1 text-gray-400 truncate max-w-[150px]">{{ leave.reason }}</div>
+          </td>
+          <td class="p-3">
+            <div *ngIf="leave.status === 'pending'" class="flex gap-2">
+              <button (click)="updateStatus(leave._id, 'approved')" class="bg-green-100 text-green-700 p-1 rounded hover:bg-green-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+              <button (click)="updateStatus(leave._id, 'rejected')" class="bg-red-100 text-red-700 p-1 rounded hover:bg-red-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <span *ngIf="leave.status !== 'pending'" class="px-2 py-1 rounded-full text-[10px] font-bold uppercase"
+              [ngClass]="{
+                'bg-green-100 text-green-700': leave.status === 'approved',
+                'bg-red-100 text-red-700': leave.status === 'rejected'
+              }">
+              {{ leave.status }}
+            </span>
+          </td>
+        </tr>
+        <tr *ngIf="teamLeaves.length === 0">
+          <td colspan="3" class="p-4 text-center text-sm text-gray-500">No pending team requests.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
