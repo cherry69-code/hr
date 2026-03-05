@@ -432,6 +432,7 @@ exports.autoGenerateOfferLetter = async (user, hrId) => {
 
 exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   const {
+    employeeId, // Support employeeId directly
     fullName,
     fatherName,
     email,
@@ -447,16 +448,23 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
     hrSignature // New Field
   } = req.body;
 
-  if (!fullName || !email || !designation) {
-    return res.status(400).json({ success: false, error: 'Please provide fullName, email and designation' });
+  // 1. Find User
+  let user = null;
+  if (employeeId) {
+      user = await User.findById(employeeId);
+  } else if (email) {
+      user = await User.findOne({ email });
   }
 
-  // --- DUPLICATE CHECK ---
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    // Check if an offer letter already exists for this user
+  // Validation if creating new user
+  if (!user && (!fullName || !email || !designation)) {
+    return res.status(400).json({ success: false, error: 'Please provide fullName, email and designation for new candidate' });
+  }
+
+  // 2. Check for Existing Sent/Signed Document
+  if (user) {
     const existingDoc = await Document.findOne({
-      employeeId: existingUser._id,
+      employeeId: user._id,
       type: 'offer_letter',
       status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
     });
@@ -464,13 +472,12 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
     if (existingDoc) {
       return res.status(400).json({ 
         success: false, 
-        error: `An Offer Letter has already been sent to ${email} (Status: ${existingDoc.status}).` 
+        error: `An Offer Letter has already been sent to ${user.email} (Status: ${existingDoc.status}).` 
       });
     }
   }
 
-  const randomPassword = crypto.randomBytes(12).toString('hex');
-
+  // 3. Create or Update User
   const update = {};
   if (fullName) update.fullName = fullName;
   if (email) update.email = email;
@@ -484,10 +491,10 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   if (panNumber) update['personalDetails.panNumber'] = encryptField(panNumber);
   if (aadharNumber) update['personalDetails.aadharNumber'] = encryptField(aadharNumber);
   if (fatherName) update['personalDetails.fatherName'] = fatherName;
-
-  let user = await User.findOne({ email }).select('_id');
+  update.companyId = req.user.companyId || 'propninja';
 
   if (!user) {
+    const randomPassword = crypto.randomBytes(12).toString('hex');
     user = await User.create({
       fullName,
       email,
@@ -509,70 +516,81 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
       companyId: req.user.companyId || 'propninja'
     });
   } else {
-    await User.findByIdAndUpdate(user._id, { $set: { ...update, companyId: req.user.companyId || 'propninja' } });
+    // Only update fields provided
+    await User.findByIdAndUpdate(user._id, { $set: update });
   }
 
   const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
   if (!employee) {
-    return res.status(500).json({ success: false, error: 'Failed to create candidate' });
+    return res.status(500).json({ success: false, error: 'Failed to find candidate' });
   }
 
-  const fileName = `offer_letter_${employee._id}_${Date.now()}.pdf`;
-  const filePath = path.join(__dirname, '../utils', fileName);
-
-  // Use the shared generator service
-  await generateOfferLetterPdf(employee, filePath);
-
-  let pdfUrl = '';
-  try {
-    const uploaded = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'raw',
-      folder: 'documents',
-      public_id: fileName
-    });
-    pdfUrl = uploaded.secure_url;
-  } catch (e) {
-    pdfUrl = '';
-  }
-
-  if (pdfUrl) {
-    await Document.create({
+  // 4. Check for PendingSignature Document (Auto-Generated)
+  let doc = await Document.findOne({
       employeeId: employee._id,
       type: 'offer_letter',
-      url: pdfUrl,
-      uploadedBy: req.user.id
-    });
-
-    await User.findByIdAndUpdate(employee._id, {
-      $set: {
-        'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() }
-      }
-    });
-  }
-
-  // --- E-SIGN FLOW ---
-  const token = crypto.randomBytes(32).toString('hex'); // 64 chars
-  const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-
-  const htmlContent = await generateDocumentHtml('offer_letter', employee);
-
-  // Create Document Record
-  await Document.create({
-    employeeId: employee._id,
-    type: 'offer_letter',
-    token,
-    tokenExpiry,
-    htmlContent,
-    status: 'Sent', // Employee hasn't signed yet
-    hrSignature, // Save HR Signature
-    hrSignedAt: hrSignature ? Date.now() : undefined,
-    uploadedBy: req.user.id
+      status: 'PendingSignature'
   });
 
-  const signingLink = `${process.env.FRONTEND_URL || 'http://localhost:4200'}/sign/${token}`;
+  let pdfUrl = doc ? doc.url : '';
+  let token = doc ? doc.token : '';
 
+  // If no existing doc, generate one
+  if (!doc) {
+      const fileName = `offer_letter_${employee._id}_${Date.now()}.pdf`;
+      const tempDir = os.tmpdir();
+      const filePath = path.join(tempDir, fileName);
+
+      try {
+        await generateOfferLetterPdf(employee, filePath);
+        const uploaded = await cloudinary.uploader.upload(filePath, {
+          resource_type: 'raw',
+          folder: 'documents',
+          public_id: fileName
+        });
+        pdfUrl = uploaded.secure_url;
+      } catch (e) {
+        console.error('PDF Generation/Upload Failed:', e);
+        // Continue if possible? No, we need PDF.
+        if (!pdfUrl) return res.status(500).json({ success: false, error: 'Failed to generate/upload Offer Letter' });
+      }
+
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      
+      // Create Document
+      token = crypto.randomBytes(32).toString('hex');
+      doc = await Document.create({
+        employeeId: employee._id,
+        type: 'offer_letter',
+        url: pdfUrl,
+        token,
+        status: 'Sent',
+        uploadedBy: req.user.id
+      });
+  } else {
+      // Reuse existing document
+      if (!token) {
+          token = crypto.randomBytes(32).toString('hex');
+          doc.token = token;
+      }
+      doc.status = 'Sent';
+      doc.tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      await doc.save();
+  }
+
+  // Update User Status
+  await User.findByIdAndUpdate(employee._id, {
+    $set: {
+      'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() },
+      status: 'OFFER_LETTER_PENDING' // Ensure status is correct
+    }
+  });
+
+  // 5. Send Email
+  const signingLink = `${process.env.FRONTEND_URL || 'http://localhost:4200'}/sign/${token}`;
   let emailSent = false;
   let emailError = '';
+  
   try {
     await sendEmail({
       email: employee.email,
@@ -585,22 +603,15 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
         <p><a href="${signingLink}" style="background-color: #16A34A; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign Offer Letter</a></p>
         ${pdfUrl ? `<p>You can also download the PDF copy here: <a href="${pdfUrl}">${pdfUrl}</a></p>` : ''}
         <p>Regards,<br/>Team HR</p>
-      `,
-      attachments: [
-        {
-          filename: 'Offer Letter.pdf',
-          path: filePath,
-          contentType: 'application/pdf'
-        }
-      ]
+      `
+      // Attachments handled by link usually, but if we have local file... we deleted it.
+      // So no attachment, just link.
     });
     emailSent = true;
   } catch (e) {
     emailSent = false;
     emailError = e && e.message ? e.message : 'Email could not be sent';
   }
-
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
   res.status(200).json({
     success: true,
@@ -615,6 +626,7 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
 
 exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   const {
+    employeeId,
     fullName,
     fatherName,
     email,
@@ -630,30 +642,35 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
     hrSignature // New Field
   } = req.body;
 
-  if (!fullName || !email || !designation) {
+  // 1. Find User
+  let user = null;
+  if (employeeId) {
+      user = await User.findById(employeeId);
+  } else if (email) {
+      user = await User.findOne({ email });
+  }
+
+  if (!user && (!fullName || !email || !designation)) {
     return res.status(400).json({ success: false, error: 'Please provide fullName, email and designation' });
   }
 
-  // --- DUPLICATE CHECK ---
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    // Check if a joining agreement already exists for this user
+  // 2. Check for Existing Document
+  if (user) {
     const existingDoc = await Document.findOne({
-      employeeId: existingUser._id,
-      type: 'joining_agreement',
+      employeeId: user._id,
+      type: { $in: ['joining_agreement', 'joining_letter'] },
       status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
     });
 
     if (existingDoc) {
       return res.status(400).json({ 
         success: false, 
-        error: `A Joining Agreement has already been sent to ${email} (Status: ${existingDoc.status}).` 
+        error: `A Joining Agreement has already been sent to ${user.email} (Status: ${existingDoc.status}).` 
       });
     }
   }
 
-  const randomPassword = crypto.randomBytes(12).toString('hex');
-
+  // 3. Create or Update User
   const update = {};
   if (fullName) update.fullName = fullName;
   if (email) update.email = email;
@@ -667,9 +684,8 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   if (aadharNumber) update['personalDetails.aadharNumber'] = aadharNumber;
   if (fatherName) update['personalDetails.fatherName'] = fatherName;
 
-  let user = await User.findOne({ email }).select('_id');
-
   if (!user) {
+    const randomPassword = crypto.randomBytes(12).toString('hex');
     user = await User.create({
       fullName,
       email,
@@ -698,23 +714,84 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to create candidate' });
   }
 
-  // --- E-SIGN FLOW ---
-  const token = crypto.randomBytes(32).toString('hex'); // 64 chars
-  const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+  // 4. Check for PendingSignature Document
+  let document = await Document.findOne({
+      employeeId: employee._id,
+      type: { $in: ['joining_agreement', 'joining_letter'] },
+      status: 'PendingSignature'
+  });
 
-  const htmlContent = await generateDocumentHtml('joining_agreement', employee);
+  let token = document ? document.token : '';
 
-  // Create Document Record
-  const document = await Document.create({
-    employeeId: employee._id,
-    type: 'joining_agreement',
-    token,
-    tokenExpiry,
-    htmlContent,
-    status: 'Sent',
-    hrSignature, // Save HR Signature
-    hrSignedAt: hrSignature ? Date.now() : undefined,
-    uploadedBy: req.user.id
+  if (!document) {
+      // Generate New (PDF-based)
+      // We reuse autoGenerateJoiningLetter logic logic but adapted for manual send
+      // Or just create HTML based if PDF gen is complex here.
+      // Let's create PDF for consistency.
+      const fileName = `joining_letter_${employee._id}_${Date.now()}.pdf`;
+      const tempDir = os.tmpdir();
+      const filePath = path.join(tempDir, fileName);
+
+      // We need a generateJoiningLetterPdf function. 
+      // Assuming generic logic or simple one.
+      // For now, let's create a simple PDF manually here if not using service.
+      const doc = new PDFDocument({ margin: 50 });
+      const writeStream = fs.createWriteStream(filePath);
+      doc.pipe(writeStream);
+      doc.fontSize(20).text('JOINING LETTER', { align: 'center' });
+      doc.moveDown();
+      doc.text(`Date: ${new Date().toLocaleDateString()}`);
+      doc.text(`Dear ${employee.fullName},`);
+      doc.text('Welcome to the team! Please sign this agreement.');
+      doc.end();
+
+      await new Promise((resolve) => writeStream.on('finish', resolve));
+
+      let pdfUrl = '';
+      try {
+        const uploaded = await cloudinary.uploader.upload(filePath, {
+          resource_type: 'raw',
+          folder: 'documents',
+          public_id: fileName
+        });
+        pdfUrl = uploaded.secure_url;
+      } catch (e) {
+         console.error('Cloudinary upload failed', e);
+      }
+
+      token = crypto.randomBytes(32).toString('hex');
+      const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+      document = await Document.create({
+        employeeId: employee._id,
+        type: 'joining_letter', // Use joining_letter for consistency
+        token,
+        tokenExpiry,
+        url: pdfUrl,
+        status: 'Sent',
+        hrSignature,
+        hrSignedAt: hrSignature ? Date.now() : undefined,
+        uploadedBy: req.user.id
+      });
+      
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } else {
+      // Reuse existing
+      if (!token) {
+          token = crypto.randomBytes(32).toString('hex');
+          document.token = token;
+      }
+      document.status = 'Sent';
+      document.tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      await document.save();
+  }
+
+  // Update User Status
+  await User.findByIdAndUpdate(employee._id, {
+    $set: {
+      'documents.joiningLetter': { url: document.url, uploadedAt: Date.now() },
+      status: 'JOINING_LETTER_PENDING'
+    }
   });
 
   const signingLink = `${process.env.FRONTEND_URL || 'http://localhost:4200'}/sign/${token}`;
