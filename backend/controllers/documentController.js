@@ -280,8 +280,13 @@ exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
 exports.uploadDocument = asyncHandler(async (req, res, next) => {
   const { employeeId, type, file } = req.body;
 
-  if (!file) {
-    return res.status(400).json({ success: false, error: 'Please upload a file' });
+  if (!employeeId || !type || !file) {
+    return res.status(400).json({ success: false, error: 'Please provide employeeId, type, and file' });
+  }
+
+  // Validate Employee ID format
+  if (!employeeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, error: 'Invalid Employee ID format' });
   }
 
   // Basic file validation (expects data URL)
@@ -307,10 +312,16 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   }
 
   // Upload to Cloudinary
-  const result = await cloudinary.uploader.upload(file, {
-    folder: 'documents',
-    resource_type: 'auto'
-  });
+  let result;
+  try {
+    result = await cloudinary.uploader.upload(file, {
+      folder: 'documents',
+      resource_type: 'auto'
+    });
+  } catch (err) {
+    console.error('Cloudinary Upload Failed:', err);
+    return res.status(500).json({ success: false, error: 'File upload failed' });
+  }
 
   // Update User model directly for standard docs
   const updateField = {};
