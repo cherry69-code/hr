@@ -50,7 +50,7 @@ export class PayrollPageComponent implements OnInit {
 
   loadMyPayslips() {
     const userId = this.authService.currentUserValue.id;
-    this.http.get(`http://localhost:5000/api/payroll/payslips/${userId}`).subscribe({
+    this.http.get(`${environment.apiUrl}/payroll/payslips/${userId}`).subscribe({
       next: (res: any) => {
         this.payslips = res.data;
       },
@@ -64,7 +64,7 @@ export class PayrollPageComponent implements OnInit {
   generatePayslip(userId: string) {
     this.loading = true;
     const payload = { employeeId: userId, month: this.selectedMonth, year: this.selectedYear };
-    this.http.post(`http://localhost:5000/api/payroll/generate`, payload).subscribe({
+    this.http.post(`${environment.apiUrl}/payroll/generate`, payload).subscribe({
       next: (res: any) => {
         this.toast.success(`Payslip generated successfully. Net Pay: ₹${res.data.netSalary}`);
         this.loading = false;

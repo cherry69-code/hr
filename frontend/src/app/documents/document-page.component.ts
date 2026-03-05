@@ -24,7 +24,7 @@ export class DocumentPageComponent implements OnInit {
 
   loadDocuments() {
     const userId = this.authService.currentUserValue.id;
-    this.http.get(`http://localhost:5000/api/documents/${userId}`).subscribe({
+    this.http.get(`${environment.apiUrl}/documents/${userId}`).subscribe({
       next: (res: any) => {
         this.documents = res.data;
         this.loading = false;

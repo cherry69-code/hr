@@ -50,7 +50,7 @@ export class ProfileComponent implements OnInit {
 
   loadProfile(userId: string) {
     this.loading = true;
-    this.http.get(`http://localhost:5000/api/employees/${userId}`).subscribe({
+    this.http.get(`${environment.apiUrl}/employees/${userId}`).subscribe({
       next: (res: any) => {
         this.user = res.data;
         const currentUserRole = this.authService.getRole();
@@ -87,7 +87,7 @@ export class ProfileComponent implements OnInit {
       address: this.editForm.personalDetails.address
     };
 
-    this.http.put(`http://localhost:5000/api/employees/${this.user._id}`, payload).subscribe({
+    this.http.put(`${environment.apiUrl}/employees/${this.user._id}`, payload).subscribe({
       next: (res: any) => {
         this.user = res.data;
         this.isEditing = false;
@@ -108,7 +108,7 @@ export class ProfileComponent implements OnInit {
 
     if (!confirm(`Send ${type.replace('_', ' ')} to ${this.user.email}?`)) return;
 
-    this.http.post(`http://localhost:5000/api/employees/${this.user._id}/send-letter`, {
+    this.http.post(`${environment.apiUrl}/employees/${this.user._id}/send-letter`, {
       type,
       letterContent: content
     }).subscribe({

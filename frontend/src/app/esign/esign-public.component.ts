@@ -47,7 +47,7 @@ export class EsignPublicComponent implements OnInit {
     this.loading = true;
     this.error = '';
     // Use the new API endpoint
-    this.http.get(`http://localhost:5000/api/esign/sign/${this.token}`).subscribe({
+    this.http.get(`${environment.apiUrl}/esign/sign/${this.token}`).subscribe({
       next: (res: any) => {
         const htmlContent = res.data?.htmlContent || '';
         this.html = this.sanitizer.bypassSecurityTrustHtml(htmlContent);
@@ -83,7 +83,7 @@ export class EsignPublicComponent implements OnInit {
     console.log('Signature length:', signature ? signature.length : 'MISSING');
 
     // Post to the new API endpoint
-    this.http.post(`http://localhost:5000/api/esign/sign/${this.token}`, {
+    this.http.post(`${environment.apiUrl}/esign/sign/${this.token}`, {
       signature // Backend expects 'signature'
     }).subscribe({
       next: (res: any) => {

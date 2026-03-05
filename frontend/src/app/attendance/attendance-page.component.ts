@@ -34,7 +34,7 @@ export class AttendancePageComponent implements OnInit {
 
   loadAttendance() {
     const userId = this.authService.currentUserValue.id;
-    this.http.get(`http://localhost:5000/api/attendance/${userId}`).subscribe({
+    this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
       next: (res: any) => this.attendanceRecords = res.data,
       error: (err) => {
         this.toast.error(err.error?.error || 'Failed to load attendance');
@@ -63,7 +63,7 @@ export class AttendancePageComponent implements OnInit {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        this.http.post(`http://localhost:5000/api/attendance/checkin/${this.authService.currentUserValue.id}`, {
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
           latitude,
           longitude
         }).subscribe({
@@ -86,7 +86,7 @@ export class AttendancePageComponent implements OnInit {
   }
 
   checkOut() {
-    this.http.put(`http://localhost:5000/api/attendance/checkout/${this.authService.currentUserValue.id}`, {}).subscribe({
+    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, {}).subscribe({
       next: (res: any) => {
         this.loading = false;
         this.statusMessage = 'Checked out successfully!';

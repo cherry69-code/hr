@@ -24,7 +24,7 @@ export class DashboardHomeComponent implements OnInit {
 
   loadStats() {
     const query = this.role === 'employee' ? `?employeeId=${this.authService.currentUserValue.id}` : '';
-    this.http.get(`http://localhost:5000/api/dashboard${query}`).subscribe({
+    this.http.get(`${environment.apiUrl}/dashboard${query}`).subscribe({
       next: (res: any) => {
         this.stats = res.data;
         this.loading = false;

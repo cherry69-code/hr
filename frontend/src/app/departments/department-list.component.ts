@@ -59,7 +59,7 @@ export class DepartmentListComponent implements OnInit {
 
   saveDepartment() {
     if (this.isEditing && this.currentId) {
-      this.http.put(`http://localhost:5000/api/departments/${this.currentId}`, this.departmentForm).subscribe({
+      this.http.put(`${environment.apiUrl}/departments/${this.currentId}`, this.departmentForm).subscribe({
         next: () => {
           this.showModal = false;
           this.loadDepartments();
@@ -85,7 +85,7 @@ export class DepartmentListComponent implements OnInit {
 
   deleteDepartment(id: string) {
     if (confirm('Are you sure you want to delete this department?')) {
-      this.http.delete(`http://localhost:5000/api/departments/${id}`).subscribe({
+      this.http.delete(`${environment.apiUrl}/departments/${id}`).subscribe({
         next: () => {
           this.loadDepartments();
           this.toast.success('Department deleted successfully');

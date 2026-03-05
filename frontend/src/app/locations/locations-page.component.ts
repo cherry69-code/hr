@@ -70,7 +70,7 @@ export class LocationsPageComponent implements OnInit {
 
   save() {
     if (this.isEditing && this.currentId) {
-      this.http.put(`http://localhost:5000/api/locations/${this.currentId}`, this.form).subscribe({
+      this.http.put(`${environment.apiUrl}/locations/${this.currentId}`, this.form).subscribe({
         next: () => {
           this.showModal = false;
           this.loadLocations();
@@ -89,9 +89,8 @@ export class LocationsPageComponent implements OnInit {
 
   delete(loc: any) {
     if (!confirm(`Delete location "${loc.name}"?`)) return;
-    this.http.delete(`http://localhost:5000/api/locations/${loc._id}`).subscribe({
+    this.http.delete(`${environment.apiUrl}/locations/${loc._id}`).subscribe({
       next: () => this.loadLocations()
     });
   }
 }
-

@@ -281,7 +281,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
           this.renderUserLocation();
         }
 
-        this.http.post(`http://localhost:5000/api/attendance/checkin/${this.user.id}`, payload).subscribe({
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.user.id}`, payload).subscribe({
           next: (res: any) => {
             this.statusMessage = 'Checked in successfully!';
             this.loadAttendance();
@@ -303,7 +303,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
 
   checkOut() {
     this.loading = true;
-    this.http.put(`http://localhost:5000/api/attendance/checkout/${this.user.id}`, {}).subscribe({
+    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.user.id}`, {}).subscribe({
       next: () => {
         this.statusMessage = 'Checked out successfully!';
         this.loadAttendance();
@@ -344,7 +344,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   loadAttendance() {
     if (!this.user) return;
 
-    this.http.get(`http://localhost:5000/api/attendance/${this.user.id}`).subscribe({
+    this.http.get(`${environment.apiUrl}/attendance/${this.user.id}`).subscribe({
       next: (res: any) => {
         this.attendanceRecords = res.data;
         this.mapAttendanceToCalendar();
@@ -474,7 +474,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   }
 
   loadLeaves() {
-    this.http.get(`http://localhost:5000/api/leaves?employeeId=${this.user.id}`).subscribe({
+    this.http.get(`${environment.apiUrl}/leaves?employeeId=${this.user.id}`).subscribe({
       next: (res: any) => {
         const leaves = res.data;
         const usedAnnual = leaves.filter((l: any) => l.leaveType === 'Paid Leave' && l.status === 'approved').length;

@@ -42,7 +42,7 @@ export class ResetPasswordComponent {
     }
 
     this.loading = true;
-    this.http.put(`http://localhost:5000/api/auth/resetpassword/${token}`, { password: this.password }).subscribe({
+    this.http.put(`${environment.apiUrl}/auth/resetpassword/${token}`, { password: this.password }).subscribe({
       next: () => {
         this.success = 'Password updated. Redirecting to login...';
         setTimeout(() => this.router.navigate(['/auth/login']), 800);
@@ -54,4 +54,3 @@ export class ResetPasswordComponent {
     });
   }
 }
-

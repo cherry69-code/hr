@@ -38,7 +38,6 @@ export class MyDocumentsPageComponent implements OnInit {
   getDownloadUrl(fileUrl: string): string {
     if (!fileUrl) return '';
     if (fileUrl.startsWith('http')) return fileUrl;
-    return `http://localhost:5000${fileUrl}`;
+    return `${environment.baseUrl}${fileUrl}`;
   }
 }
-

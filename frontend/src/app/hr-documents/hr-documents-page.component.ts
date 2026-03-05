@@ -108,7 +108,7 @@ export class HrDocumentsPageComponent implements OnInit {
       employeeId: this.form.employeeId,
       documentType: this.form.documentType,
       htmlContent: this.form.htmlContent,
-      publicBaseUrl: 'http://localhost:4201'
+      publicBaseUrl: environment.baseUrl
     }).subscribe({
       next: (res: any) => {
         this.sending = false;
@@ -137,7 +137,7 @@ export class HrDocumentsPageComponent implements OnInit {
     this.showSignaturePad = false;
     this.toast.info('Countersigning...');
 
-    this.http.post(`http://localhost:5000/api/esign/hr-sign/${this.countersignDocId}`, {
+    this.http.post(`${environment.apiUrl}/esign/hr-sign/${this.countersignDocId}`, {
       signature
     }).subscribe({
       next: () => {

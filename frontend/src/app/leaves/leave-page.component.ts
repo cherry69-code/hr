@@ -44,7 +44,7 @@ export class LeavePageComponent implements OnInit {
     // Let's rely on backend to return everything we have access to,
     // and then frontend can categorize.
 
-    this.http.get(`http://localhost:5000/api/leaves`).subscribe({
+    this.http.get(`${environment.apiUrl}/leaves`).subscribe({
       next: (res: any) => this.leaves = res.data,
       error: (err) => this.toast.error(err.error?.error || 'Failed to load leaves')
     });
@@ -74,7 +74,7 @@ export class LeavePageComponent implements OnInit {
   }
 
   updateStatus(leaveId: string, status: string) {
-    this.http.put(`http://localhost:5000/api/leaves/${leaveId}`, { status }).subscribe({
+    this.http.put(`${environment.apiUrl}/leaves/${leaveId}`, { status }).subscribe({
       next: () => {
         this.toast.success(`Leave ${status} successfully`);
         this.loadLeaves();

@@ -192,7 +192,7 @@ export class EmployeeListComponent implements OnInit {
     if (!payload.departmentId) delete payload.departmentId;
     if (!payload.reportingManagerId) delete payload.reportingManagerId;
 
-    this.http.put(`http://localhost:5000/api/employees/${this.currentEmployeeId}`, payload).subscribe({
+    this.http.put(`${environment.apiUrl}/employees/${this.currentEmployeeId}`, payload).subscribe({
       next: () => {
         this.toast.success('Employee updated successfully');
         this.closeModal();
@@ -204,7 +204,7 @@ export class EmployeeListComponent implements OnInit {
 
   deleteEmployee(id: string) {
     if (confirm('Are you sure you want to delete this employee?')) {
-      this.http.delete(`http://localhost:5000/api/employees/${id}`).subscribe({
+      this.http.delete(`${environment.apiUrl}/employees/${id}`).subscribe({
         next: () => {
           this.toast.success('Employee deleted successfully');
           this.loadEmployees();
@@ -221,14 +221,14 @@ export class EmployeeListComponent implements OnInit {
   }
 
   generateOfferLetter(id: string) {
-    this.http.post(`http://localhost:5000/api/documents/generate/offer_letter/${id}`, {}).subscribe({
+    this.http.post(`${environment.apiUrl}/documents/generate/offer_letter/${id}`, {}).subscribe({
       next: () => this.toast.success('Offer letter generated successfully'),
       error: (err) => this.toast.error(err.error?.error || 'Offer letter generation failed')
     });
   }
 
   generateJoiningLetter(id: string) {
-    this.http.post(`http://localhost:5000/api/documents/generate/joining_letter/${id}`, {}).subscribe({
+    this.http.post(`${environment.apiUrl}/documents/generate/joining_letter/${id}`, {}).subscribe({
       next: () => this.toast.success('Joining letter generated successfully'),
       error: (err) => this.toast.error(err.error?.error || 'Joining letter generation failed')
     });
