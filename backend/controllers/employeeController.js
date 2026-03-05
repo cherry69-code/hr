@@ -188,43 +188,24 @@ exports.deleteEmployee = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: {} });
 });
 
-// @desc    Send Offer/Joining Letter
+const { sendOfferLetterToCandidate, sendJoiningAgreementToCandidate } = require('./documentController');
+
+// @desc    Send Offer/Joining Letter (Proxy to Document Controller)
 // @route   POST /api/employees/:id/send-letter
 // @access  Private/HR/Admin
 exports.sendLetter = asyncHandler(async (req, res, next) => {
-  const employee = await User.findById(req.params.id);
-  if (!employee) {
-    return res.status(404).json({ success: false, error: 'Employee not found' });
-  }
-
-  const { type, letterContent } = req.body; // type: 'offer_letter' or 'joining_letter'
-
-  if (!type || !letterContent) {
-    return res.status(400).json({ success: false, error: 'Please provide letter type and content' });
-  }
-
-  const subject = type === 'offer_letter' ? 'Offer Letter - PropNinja' : 'Joining Letter - PropNinja';
+  const { type } = req.body;
   
-  // Here we would ideally generate a PDF or link to a signable document
-  // For now, we assume letterContent is HTML or a link
+  // Inject employeeId into body so documentController can find the user
+  req.body.employeeId = req.params.id;
   
-  const html = `
-    <p>Dear ${employee.fullName},</p>
-    <p>Please find your ${type.replace('_', ' ')} below:</p>
-    <div style="border: 1px solid #ccc; padding: 20px; background: #f9f9f9;">
-      ${letterContent}
-    </div>
-    <p>Regards,<br>HR Team</p>
-  `;
-
-  await sendEmail({
-    to: employee.email,
-    subject,
-    html,
-    text: `Please check your email for ${type}`
-  });
-
-  res.status(200).json({ success: true, message: 'Letter sent successfully' });
+  if (type === 'offer_letter') {
+      return sendOfferLetterToCandidate(req, res, next);
+  } else if (type === 'joining_letter' || type === 'joining_agreement') {
+      return sendJoiningAgreementToCandidate(req, res, next);
+  }
+  
+  res.status(400).json({ success: false, error: 'Invalid letter type' });
 });
 
 module.exports = {
