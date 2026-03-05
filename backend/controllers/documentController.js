@@ -370,19 +370,26 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: user, url: result.secure_url });
 });
 
+const os = require('os');
+
 exports.autoGenerateOfferLetter = async (user, hrId) => {
     // 1. Prepare file path
     const fileName = `offer_letter_${user._id}_${Date.now()}.pdf`;
-    const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../utils');
-    if (!fs.existsSync(tempDir)) {
-        try { fs.mkdirSync(tempDir, { recursive: true }); } catch {}
-    }
+    
+    // Use system temp directory for reliability
+    const tempDir = os.tmpdir();
     const filePath = path.join(tempDir, fileName);
 
     // 2. Generate PDF
     // Populate necessary fields for template
     const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
-    await generateOfferLetterPdf(employee, filePath);
+    
+    try {
+        await generateOfferLetterPdf(employee, filePath);
+    } catch (pdfErr) {
+        console.error('PDF Generation Error:', pdfErr);
+        throw pdfErr; // Re-throw to be caught by caller
+    }
 
     // 3. Upload to Cloudinary
     let pdfUrl = '';
@@ -394,7 +401,8 @@ exports.autoGenerateOfferLetter = async (user, hrId) => {
         });
         pdfUrl = uploaded.secure_url;
     } catch (e) {
-        console.error('Cloudinary upload failed', e);
+        console.error('Cloudinary upload failed (PDF):', e);
+        // Don't throw, just log. But we can't save URL.
     }
 
     // 4. Create Document Record
@@ -414,6 +422,8 @@ exports.autoGenerateOfferLetter = async (user, hrId) => {
                 status: 'OFFER_LETTER_PENDING'
             }
         });
+    } else {
+        console.error('Failed to upload Offer Letter PDF to Cloudinary');
     }
     
     // Cleanup
