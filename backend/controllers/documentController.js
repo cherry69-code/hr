@@ -340,20 +340,30 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
 
   // Check if all required documents are present
   const docs = user.documents || {};
-  // Note: 'bankPassbook' and 'addressProof' were added to schema. 
-  // If frontend sends 'bank_details' or similar, ensure it maps to schema.
-  const required = ['pan', 'aadhar', 'photo', 'bankPassbook', 'addressProof'];
+  
+  // Mandatory documents as per new requirement: PAN, Aadhar, Degree Certificate
+  const required = ['pan', 'aadhar', 'degreeCertificate'];
+  
+  // Check if every required document exists and has a URL
   const allPresent = required.every(key => docs[key] && docs[key].url);
 
-  if (allPresent && user.status === 'DOCUMENT_PENDING') {
-    user.status = 'DOCUMENTS_UPLOADED';
-    await user.save();
+  // Trigger Offer Letter if all docs are present AND status is DOCUMENT_PENDING
+  // (Or if status is roughly correct, to allow re-trigger if failed before)
+  if (allPresent && (user.status === 'DOCUMENT_PENDING' || user.status === 'active')) {
     
-    // Auto-generate Offer Letter
-    try {
-       await exports.autoGenerateOfferLetter(user, req.user.id);
-    } catch (err) {
-       console.error('Auto-generation of Offer Letter failed:', err);
+    // Only generate if not already generated/sent
+    const existingOffer = await Document.findOne({ employeeId, type: 'offer_letter' });
+    
+    if (!existingOffer) {
+        user.status = 'DOCUMENTS_UPLOADED';
+        await user.save();
+        
+        // Auto-generate Offer Letter
+        try {
+           await exports.autoGenerateOfferLetter(user, req.user.id);
+        } catch (err) {
+           console.error('Auto-generation of Offer Letter failed:', err);
+        }
     }
   }
 
