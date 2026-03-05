@@ -4,6 +4,9 @@ const { protect, authorize } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
+// Public route for signing (token-based)
+router.post('/sign-public/:token', signAndSendDocument);
+
 router.use(protect);
 
 router.post('/upload', authorize('admin', 'hr'), uploadDocument);

@@ -53,7 +53,16 @@ const UserSchema = new mongoose.Schema({
   joiningDate: Date,
   status: {
     type: String,
-    enum: ['active', 'inactive'],
+    enum: [
+      'active', 
+      'inactive', 
+      'DOCUMENT_PENDING', 
+      'DOCUMENTS_UPLOADED', 
+      'OFFER_LETTER_PENDING', 
+      'OFFER_LETTER_SIGNED', 
+      'JOINING_LETTER_PENDING', 
+      'JOINING_LETTER_SIGNED'
+    ],
     default: 'active'
   },
   phone: String,
@@ -93,6 +102,8 @@ const UserSchema = new mongoose.Schema({
   documents: {
     aadhar: { url: String, uploadedAt: Date },
     pan: { url: String, uploadedAt: Date },
+    bankPassbook: { url: String, uploadedAt: Date },
+    addressProof: { url: String, uploadedAt: Date },
     offerLetter: { url: String, signed: Boolean, uploadedAt: Date },
     joiningLetter: { url: String, signed: Boolean, uploadedAt: Date },
     joiningAgreement: { url: String, signed: Boolean, uploadedAt: Date },

@@ -69,6 +69,7 @@ exports.createEmployee = asyncHandler(async (req, res, next) => {
     email,
     password: tempPassword,
     role: role || 'employee',
+    status: 'DOCUMENT_PENDING',
     ...hrData
   });
 

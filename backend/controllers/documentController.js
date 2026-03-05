@@ -317,8 +317,77 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
     $set: updateField
   }, { new: true });
 
+  // Check if all required documents are present
+  const docs = user.documents || {};
+  // Note: 'bankPassbook' and 'addressProof' were added to schema. 
+  // If frontend sends 'bank_details' or similar, ensure it maps to schema.
+  const required = ['pan', 'aadhar', 'photo', 'bankPassbook', 'addressProof'];
+  const allPresent = required.every(key => docs[key] && docs[key].url);
+
+  if (allPresent && user.status === 'DOCUMENT_PENDING') {
+    user.status = 'DOCUMENTS_UPLOADED';
+    await user.save();
+    
+    // Auto-generate Offer Letter
+    try {
+       await exports.autoGenerateOfferLetter(user, req.user.id);
+    } catch (err) {
+       console.error('Auto-generation of Offer Letter failed:', err);
+    }
+  }
+
   res.status(200).json({ success: true, data: user, url: result.secure_url });
 });
+
+exports.autoGenerateOfferLetter = async (user, hrId) => {
+    // 1. Prepare file path
+    const fileName = `offer_letter_${user._id}_${Date.now()}.pdf`;
+    const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../utils');
+    if (!fs.existsSync(tempDir)) {
+        try { fs.mkdirSync(tempDir, { recursive: true }); } catch {}
+    }
+    const filePath = path.join(tempDir, fileName);
+
+    // 2. Generate PDF
+    // Populate necessary fields for template
+    const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
+    await generateOfferLetterPdf(employee, filePath);
+
+    // 3. Upload to Cloudinary
+    let pdfUrl = '';
+    try {
+        const uploaded = await cloudinary.uploader.upload(filePath, {
+            resource_type: 'raw',
+            folder: 'documents',
+            public_id: fileName
+        });
+        pdfUrl = uploaded.secure_url;
+    } catch (e) {
+        console.error('Cloudinary upload failed', e);
+    }
+
+    // 4. Create Document Record
+    if (pdfUrl) {
+        await Document.create({
+            employeeId: user._id,
+            type: 'offer_letter',
+            url: pdfUrl,
+            status: 'PendingSignature', // Ready to be sent
+            uploadedBy: hrId
+        });
+
+        // Update User
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() },
+                status: 'OFFER_LETTER_PENDING'
+            }
+        });
+    }
+    
+    // Cleanup
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+};
 
 exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   const {
@@ -641,84 +710,152 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Sign document and email it
-// @route   POST /api/documents/sign
-// @access  Private
+// @desc    Sign document (Public/Token)
+// @route   POST /api/documents/sign-public/:token
+// @access  Public
 exports.signAndSendDocument = asyncHandler(async (req, res, next) => {
-  const { documentType, signatureData } = req.body;
-  const employeeId = req.user.id; // From auth middleware
+  const { token } = req.params;
+  const { signatureData } = req.body; // Base64 signature image
 
-  const employee = await User.findById(employeeId).lean();
-  if (!employee) {
-    return res.status(404).json({ success: false, error: 'User not found' });
-  }
-
-  // Create PDF
-  const doc = new PDFDocument({ margin: 50 });
-  const fileName = `${documentType}_signed_${employeeId}_${Date.now()}.pdf`;
-  const filePath = path.join(__dirname, '../utils', fileName);
-  const writeStream = fs.createWriteStream(filePath);
-  
-  doc.pipe(writeStream);
-
-  // Document Content (Simplified Offer Letter)
-  doc.fontSize(24).text('OFFER LETTER', { align: 'center' });
-  doc.moveDown();
-  doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`);
-  doc.moveDown();
-  doc.text(`Dear ${employee.fullName},`);
-  doc.moveDown();
-  doc.text('We are pleased to offer you the position at PropNinja HR. We are excited to have you on board!');
-  doc.moveDown();
-  doc.text('Please sign below to accept this offer.');
-  doc.moveDown(4);
-
-  // Embed Signature
-  if (signatureData) {
-    // signatureData is "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
-    const base64Data = signatureData.split(',')[1];
-    const imgBuffer = Buffer.from(base64Data, 'base64');
-    
-    doc.text('Signature:', { underline: true });
-    doc.moveDown(0.5);
-    doc.image(imgBuffer, { width: 150 }); // Embed image
-    doc.moveDown();
-    doc.text(employee.fullName);
-  }
-
-  doc.end();
-
-  await new Promise((resolve, reject) => {
-    writeStream.on('finish', resolve);
-    writeStream.on('error', reject);
+  // 1. Find Document by token
+  const document = await Document.findOne({ 
+    token, 
+    tokenExpiry: { $gt: Date.now() },
+    status: { $in: ['Sent', 'PendingSignature'] } 
   });
 
-  // Send Email
-  try {
-    await sendEmail({
-      email: employee.email,
-      subject: `Signed ${documentType.replace('_', ' ')}`,
-      message: `Please find attached your signed ${documentType.replace('_', ' ')}.`,
-      attachments: [
-        {
-          filename: fileName,
-          path: filePath,
-          contentType: 'application/pdf'
-        }
-      ]
-    });
-
-    // Cleanup
-    fs.unlinkSync(filePath);
-
-    res.status(200).json({ success: true, message: 'Document signed and emailed successfully' });
-  } catch (err) {
-    // Cleanup even on error
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    console.error(err);
-    res.status(500).json({ success: false, error: 'Email could not be sent' });
+  if (!document) {
+    return res.status(400).json({ success: false, error: 'Invalid or expired token' });
   }
+
+  // 2. Update Document
+  document.status = 'EmployeeSigned'; 
+  document.employeeSignature = signatureData;
+  document.employeeSignedAt = Date.now();
+  document.employeeIP = req.ip;
+  document.token = undefined; 
+  await document.save();
+
+  // 3. Update User Status & Trigger Next Step
+  const user = await User.findById(document.employeeId);
+  if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+  }
+
+  if (document.type === 'offer_letter') {
+      user.status = 'OFFER_LETTER_SIGNED';
+      if (user.documents && user.documents.offerLetter) user.documents.offerLetter.signed = true;
+      await user.save();
+      
+      // Trigger Joining Letter
+      try {
+          await exports.autoGenerateJoiningLetter(user);
+      } catch (err) {
+          console.error('Auto-generation of Joining Letter failed:', err);
+      }
+  } else if (document.type === 'joining_letter' || document.type === 'joining_agreement') {
+      user.status = 'active'; // Activate Account (Step 8)
+      document.status = 'Completed'; 
+      await document.save();
+      
+      if (document.type === 'joining_letter' && user.documents.joiningLetter) user.documents.joiningLetter.signed = true;
+      if (document.type === 'joining_agreement' && user.documents.joiningAgreement) user.documents.joiningAgreement.signed = true;
+      await user.save();
+      
+      // Send Credentials
+      try {
+          await exports.sendAccountActivationEmail(user);
+      } catch (err) {
+          console.error('Activation email failed:', err);
+      }
+  }
+
+  res.status(200).json({ success: true, message: 'Document signed successfully' });
 });
+
+exports.autoGenerateJoiningLetter = async (user) => {
+    // 1. Prepare file path
+    const fileName = `joining_letter_${user._id}_${Date.now()}.pdf`;
+    const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../utils');
+    if (!fs.existsSync(tempDir)) {
+        try { fs.mkdirSync(tempDir, { recursive: true }); } catch {}
+    }
+    const filePath = path.join(tempDir, fileName);
+
+    // 2. Generate PDF
+    const employee = await User.findById(user._id).populate('departmentId').populate('teamId').lean();
+    // Assuming generateJoiningAgreementPdf exists or using generic
+    // Using generic generateAndUploadPDF logic but adapted
+    const doc = new PDFDocument({ margin: 50 });
+    const writeStream = fs.createWriteStream(filePath);
+    doc.pipe(writeStream);
+    doc.fontSize(20).text('JOINING LETTER', { align: 'center' });
+    doc.moveDown();
+    doc.text(`Date: ${new Date().toLocaleDateString()}`);
+    doc.text(`Dear ${employee.fullName},`);
+    doc.text('Welcome to the team!');
+    doc.end();
+
+    await new Promise((resolve) => writeStream.on('finish', resolve));
+
+    // 3. Upload to Cloudinary
+    let pdfUrl = '';
+    try {
+        const uploaded = await cloudinary.uploader.upload(filePath, {
+            resource_type: 'raw',
+            folder: 'documents',
+            public_id: fileName
+        });
+        pdfUrl = uploaded.secure_url;
+    } catch (e) { console.error(e); }
+
+    // 4. Create Document Record
+    if (pdfUrl) {
+        const token = crypto.randomBytes(32).toString('hex');
+        await Document.create({
+            employeeId: user._id,
+            type: 'joining_letter',
+            url: pdfUrl,
+            status: 'PendingSignature',
+            token,
+            tokenExpiry: Date.now() + 7 * 24 * 60 * 60 * 1000
+        });
+
+        // Update User
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                'documents.joiningLetter': { url: pdfUrl, uploadedAt: Date.now() },
+                status: 'JOINING_LETTER_PENDING'
+            }
+        });
+
+        // Email Link
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+        const signingLink = `${frontendUrl}/sign/${token}`;
+        await sendEmail({
+            to: user.email,
+            subject: 'Action Required: Sign Joining Letter',
+            html: `<p>Please sign your Joining Letter: <a href="${signingLink}">${signingLink}</a></p>`
+        });
+    }
+    
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+};
+
+exports.sendAccountActivationEmail = async (user) => {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const loginUrl = `${frontendUrl}/login`;
+    await sendEmail({
+        to: user.email,
+        subject: 'Welcome to PropNinja - Account Activated',
+        html: `
+            <p>Congratulations! Your onboarding is complete.</p>
+            <p>Your account is now ACTIVE.</p>
+            <p>Login here: <a href="${loginUrl}">${loginUrl}</a></p>
+            <p>Email: ${user.email}</p>
+        `
+    });
+};
 
 // @desc    Get all documents for an employee
 // @route   GET /api/documents/:employeeId
