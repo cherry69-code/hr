@@ -31,7 +31,17 @@ exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
 
   // 2. Generate PDF locally
   const fileName = `${type}_${employeeId}_${Date.now()}.pdf`;
-  const filePath = path.join(__dirname, '../utils', fileName);
+  // Use /tmp for Render compatibility or fallback to utils
+  const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../utils');
+  if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (err) {
+        // If mkdir fails (e.g. permission), fallback to current dir
+        console.error('Failed to create temp dir:', err);
+      }
+  }
+  const filePath = path.join(tempDir, fileName);
   
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   const writeStream = fs.createWriteStream(filePath);
@@ -257,7 +267,9 @@ exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
   await User.findByIdAndUpdate(employeeId, { $set: updateField });
 
   // 5. Cleanup local file
-  fs.unlinkSync(filePath);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
 
   res.status(201).json({ success: true, data: document });
 });

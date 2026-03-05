@@ -1,5 +1,5 @@
 export const environment = {
   production: false,
-  baseUrl: 'http://localhost:5000',
-  apiUrl: 'http://localhost:5000/api'
+  baseUrl: 'https://api.hrpropninja.com',
+  apiUrl: 'https://api.hrpropninja.com/api'
 };

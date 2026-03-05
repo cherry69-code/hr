@@ -13,7 +13,7 @@ const testLogin = async () => {
     console.log('MongoDB Connected...');
 
     const email = 'admin@propninja.com';
-    const password = 'admin123';
+    const password = 'Casper@123';
 
     console.log(`Attempting to find user: ${email}`);
     const user = await User.findOne({ email }).select('+password');

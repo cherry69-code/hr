@@ -22,12 +22,13 @@ async function run() {
   console.log('Connected.');
 
   let user = await User.findOne({ email });
-  if (!user) {
+    if (!user) {
     console.log('Admin user not found, creating one...');
     user = new User({
       fullName: 'Administrator',
       email,
       role: 'admin',
+      employeeId: 'NINJA001', // Force ID to avoid collision
       password: newPassword,
       status: 'active',
     });

@@ -174,7 +174,7 @@ exports.updateEmployee = asyncHandler(async (req, res, next) => {
 // @desc    Delete employee
 // @route   DELETE /api/employees/:id
 // @access  Private/Admin
-const deleteEmployee = asyncHandler(async (req, res, next) => {
+exports.deleteEmployee = asyncHandler(async (req, res, next) => {
   const employee = await User.findByIdAndDelete(req.params.id);
   if (!employee) {
     return res.status(404).json({ success: false, error: 'Employee not found' });
@@ -227,6 +227,6 @@ module.exports = {
   createEmployee: exports.createEmployee,
   getEmployee: exports.getEmployee,
   updateEmployee: exports.updateEmployee,
-  deleteEmployee,
+  deleteEmployee: exports.deleteEmployee,
   sendLetter: exports.sendLetter
 };
