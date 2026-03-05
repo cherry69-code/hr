@@ -26,7 +26,7 @@ const corsOriginsRaw = process.env.CORS_ORIGINS || [
 
 const corsOrigins = String(corsOriginsRaw)
   .split(',')
-  .map((o) => String(o).trim().replace(/^['"`]+|['"`]+$/g, ''))
+  .map((o) => String(o).trim().replace(/[`"' \t\r\n]/g, ''))
   .filter(Boolean);
 
 console.log('Allowed CORS Origins:', corsOrigins);

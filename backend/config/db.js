@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const connectDB = async () => {
   try {
     const raw = process.env.MONGO_URI;
-    const uri = raw ? String(raw).trim().replace(/^['"`]+|['"`]+$/g, '') : '';
+    const uri = raw ? String(raw).trim().replace(/[`"' \t\r\n]/g, '') : '';
     if (!uri) {
       throw new Error('Missing MONGO_URI');
     }
