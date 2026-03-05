@@ -11,9 +11,12 @@ const connectDB = async () => {
     const conn = await mongoose.connect(uri);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    const hint = /URI malformed/i.test(String(error && error.message))
+    const msg = String(error && error.message ? error.message : '');
+    const hint = /URI malformed/i.test(msg)
       ? ' (check URL-encoding for special characters in your MongoDB password; e.g. "@" => "%40", "%" => "%25")'
-      : '';
+      : /bad auth|authentication failed/i.test(msg)
+        ? ' (check MongoDB username/password in MONGO_URI and ensure the DB user exists in Atlas Database Access)'
+        : '';
     console.error(`Error: ${error.message}${hint}`);
     throw error;
   }
