@@ -32,22 +32,7 @@ const corsOrigins = String(corsOriginsRaw)
 console.log('Allowed CORS Origins:', corsOrigins);
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    // TEMPORARY DEBUG: Allow ALL origins
-    console.log('Incoming Origin:', origin);
-    return callback(null, true); 
-    
-    /* 
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (corsOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-    */
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
