@@ -466,13 +466,13 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
     const existingDoc = await Document.findOne({
       employeeId: user._id,
       type: 'offer_letter',
-      status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
+      status: { $in: ['EmployeeSigned', 'Completed'] } // Allow resending if 'Sent' or 'PendingSignature'
     });
 
     if (existingDoc) {
       return res.status(400).json({ 
         success: false, 
-        error: `An Offer Letter has already been sent to ${user.email} (Status: ${existingDoc.status}).` 
+        error: `An Offer Letter has already been signed/completed (Status: ${existingDoc.status}).` 
       });
     }
   }
@@ -525,11 +525,11 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to find candidate' });
   }
 
-  // 4. Check for PendingSignature Document (Auto-Generated)
+  // 4. Check for PendingSignature or Sent Document
   let doc = await Document.findOne({
       employeeId: employee._id,
       type: 'offer_letter',
-      status: 'PendingSignature'
+      status: { $in: ['PendingSignature', 'Sent'] }
   });
 
   let pdfUrl = doc ? doc.url : '';
@@ -659,13 +659,13 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
     const existingDoc = await Document.findOne({
       employeeId: user._id,
       type: { $in: ['joining_agreement', 'joining_letter'] },
-      status: { $in: ['Sent', 'EmployeeSigned', 'Completed'] }
+      status: { $in: ['EmployeeSigned', 'Completed'] } // Allow resending if 'Sent'
     });
 
     if (existingDoc) {
       return res.status(400).json({ 
         success: false, 
-        error: `A Joining Agreement has already been sent to ${user.email} (Status: ${existingDoc.status}).` 
+        error: `A Joining Agreement has already been signed/completed (Status: ${existingDoc.status}).` 
       });
     }
   }
@@ -714,11 +714,11 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to create candidate' });
   }
 
-  // 4. Check for PendingSignature Document
+  // 4. Check for PendingSignature or Sent Document
   let document = await Document.findOne({
       employeeId: employee._id,
       type: { $in: ['joining_agreement', 'joining_letter'] },
-      status: 'PendingSignature'
+      status: { $in: ['PendingSignature', 'Sent'] }
   });
 
   let token = document ? document.token : '';
