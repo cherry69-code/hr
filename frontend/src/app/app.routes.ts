@@ -2,35 +2,16 @@ import { Routes } from '@angular/router';
 import { LoginComponent } from './auth/login.component';
 import { ResetPasswordComponent } from './auth/reset-password.component';
 import { LayoutComponent } from './core/layout/layout.component';
-import { DashboardHomeComponent } from './dashboard/dashboard-home.component';
-import { EmployeeHomeComponent } from './employee-home/employee-home.component';
-import { AttendancePageComponent } from './attendance/attendance-page.component';
-import { EmployeeListComponent } from './employees/employee-list.component';
-import { LeavePageComponent } from './leaves/leave-page.component';
-import { PayrollPageComponent } from './payroll/payroll-page.component';
-import { DocumentPageComponent } from './documents/document-page.component';
-import { LocationsPageComponent } from './locations/locations-page.component';
-import { IncentiveDashboardComponent } from './incentives/incentive-dashboard.component';
-import { IncentiveRuleBuilderComponent } from './incentives/incentive-rule-builder.component';
-import { IncentiveAnalyticsComponent } from './incentives/incentive-analytics.component';
 import { authGuard } from './guards/auth.guard';
 import { inject } from '@angular/core';
 import { AuthService } from './services/auth.service';
+import { EsignPublicComponent } from './esign/esign-public.component';
 
 const RoleRedirectGuard = () => {
   const authService = inject(AuthService);
   const role = authService.getRole();
   return role === 'employee' ? '/home' : '/dashboard';
 };
-
-import { ProfileComponent } from './profile/profile.component';
-import { DepartmentListComponent } from './departments/department-list.component';
-import { OfferLetterPageComponent } from './offer-letter/offer-letter-page.component';
-import { TemplatesPageComponent } from './templates/templates-page.component';
-import { HrDocumentsPageComponent } from './hr-documents/hr-documents-page.component';
-import { EsignPublicComponent } from './esign/esign-public.component';
-import { MyDocumentsPageComponent } from './my-documents/my-documents-page.component';
-import { JoiningAgreementPageComponent } from './joining-agreement/joining-agreement-page.component';
 
 export const routes: Routes = [
   { path: 'auth/login', component: LoginComponent },
@@ -42,26 +23,93 @@ export const routes: Routes = [
     component: LayoutComponent,
     canActivate: [authGuard],
     children: [
-      { path: 'home', component: EmployeeHomeComponent },
-      { path: 'dashboard', component: DashboardHomeComponent },
-      { path: 'profile', component: ProfileComponent },
-      { path: 'profile/:id', component: ProfileComponent },
-      { path: 'attendance', component: AttendancePageComponent },
-      { path: 'employees', component: EmployeeListComponent, data: { roles: ['admin', 'hr', 'manager'] } },
-      { path: 'departments', component: DepartmentListComponent, data: { roles: ['admin'] } },
-      { path: 'leaves', component: LeavePageComponent },
-      { path: 'payroll', component: PayrollPageComponent },
-      { path: 'incentives', component: IncentiveDashboardComponent },
-      { path: 'incentives/rules', component: IncentiveRuleBuilderComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'incentives/analytics', component: IncentiveAnalyticsComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'locations', component: LocationsPageComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'documents', component: DocumentPageComponent },
-      { path: 'offer-letter', component: OfferLetterPageComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'joining-agreement', component: JoiningAgreementPageComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'templates', component: TemplatesPageComponent, data: { roles: ['admin'] } },
-      { path: 'hr-documents', component: HrDocumentsPageComponent, data: { roles: ['admin', 'hr'] } },
-      { path: 'my-documents', component: MyDocumentsPageComponent, data: { roles: ['admin', 'hr', 'employee', 'manager'] } },
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' } // Default fallback
+      {
+        path: 'home',
+        loadComponent: () => import('./employee-home/employee-home.component').then(m => m.EmployeeHomeComponent)
+      },
+      {
+        path: 'dashboard',
+        loadComponent: () => import('./dashboard/dashboard-home.component').then(m => m.DashboardHomeComponent)
+      },
+      {
+        path: 'profile',
+        loadComponent: () => import('./profile/profile.component').then(m => m.ProfileComponent)
+      },
+      {
+        path: 'profile/:id',
+        loadComponent: () => import('./profile/profile.component').then(m => m.ProfileComponent)
+      },
+      {
+        path: 'attendance',
+        loadComponent: () => import('./attendance/attendance-page.component').then(m => m.AttendancePageComponent)
+      },
+      {
+        path: 'employees',
+        loadComponent: () => import('./employees/employee-list.component').then(m => m.EmployeeListComponent),
+        data: { roles: ['admin', 'hr', 'manager'] }
+      },
+      {
+        path: 'departments',
+        loadComponent: () => import('./departments/department-list.component').then(m => m.DepartmentListComponent),
+        data: { roles: ['admin'] }
+      },
+      {
+        path: 'leaves',
+        loadComponent: () => import('./leaves/leave-page.component').then(m => m.LeavePageComponent)
+      },
+      {
+        path: 'payroll',
+        loadComponent: () => import('./payroll/payroll-page.component').then(m => m.PayrollPageComponent)
+      },
+      {
+        path: 'incentives',
+        loadComponent: () => import('./incentives/incentive-dashboard.component').then(m => m.IncentiveDashboardComponent)
+      },
+      {
+        path: 'incentives/rules',
+        loadComponent: () => import('./incentives/incentive-rule-builder.component').then(m => m.IncentiveRuleBuilderComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'incentives/analytics',
+        loadComponent: () => import('./incentives/incentive-analytics.component').then(m => m.IncentiveAnalyticsComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'locations',
+        loadComponent: () => import('./locations/locations-page.component').then(m => m.LocationsPageComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'documents',
+        loadComponent: () => import('./documents/document-page.component').then(m => m.DocumentPageComponent)
+      },
+      {
+        path: 'offer-letter',
+        loadComponent: () => import('./offer-letter/offer-letter-page.component').then(m => m.OfferLetterPageComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'joining-agreement',
+        loadComponent: () => import('./joining-agreement/joining-agreement-page.component').then(m => m.JoiningAgreementPageComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'templates',
+        loadComponent: () => import('./templates/templates-page.component').then(m => m.TemplatesPageComponent),
+        data: { roles: ['admin'] }
+      },
+      {
+        path: 'hr-documents',
+        loadComponent: () => import('./hr-documents/hr-documents-page.component').then(m => m.HrDocumentsPageComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
+        path: 'my-documents',
+        loadComponent: () => import('./my-documents/my-documents-page.component').then(m => m.MyDocumentsPageComponent),
+        data: { roles: ['admin', 'hr', 'employee', 'manager'] }
+      },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
   { path: '**', redirectTo: 'auth/login' }

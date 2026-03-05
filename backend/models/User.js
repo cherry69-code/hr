@@ -170,4 +170,10 @@ UserSchema.methods.getResetPasswordToken = function () {
   return resetToken;
 };
 
+UserSchema.index({ role: 1 });
+UserSchema.index({ status: 1 });
+UserSchema.index({ departmentId: 1 });
+UserSchema.index({ reportingManagerId: 1 });
+UserSchema.index({ teamId: 1 });
+
 module.exports = mongoose.model('User', UserSchema);

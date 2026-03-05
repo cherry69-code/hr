@@ -37,12 +37,32 @@ exports.getEmployees = asyncHandler(async (req, res, next) => {
     // We'll keep it restricted to Admin/HR as per original annotation, but let's see route config.
   }
 
+  // Pagination
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 100; // Default 100 to avoid breaking UI immediately
+  const startIndex = (page - 1) * limit;
+
+  const total = await User.countDocuments(query);
+
   const employees = await User.find(query)
     .populate('departmentId')
     .populate('reportingManagerId', 'fullName email')
+    .sort({ createdAt: -1 }) // Sort by newest
+    .skip(startIndex)
+    .limit(limit)
     .lean();
     
-  res.status(200).json({ success: true, count: employees.length, data: employees });
+  res.status(200).json({ 
+      success: true, 
+      count: employees.length, 
+      total,
+      pagination: {
+          page,
+          limit,
+          pages: Math.ceil(total / limit)
+      },
+      data: employees 
+  });
 });
 
 // @desc    Get potential managers (N1, N2, N3, PnL)
