@@ -5,7 +5,6 @@ describe('API health', () => {
     const app = require('../app');
     const res = await request(app).get('/');
     expect(res.status).toBe(200);
-    expect(res.text).toContain('PropHR API is running');
+    expect(res.text).toContain('HR Prop Ninja API is running');
   });
 });
-

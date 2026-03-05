@@ -36,15 +36,33 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Enable CORS
-app.use(cors({
-  origin: [
-    'http://localhost:4200',
-    'https://www.hrpropninja.com',
-    'https://hrpropninja.com'
-  ],
-  credentials: true
-}));
+const corsOriginsRaw = process.env.CORS_ORIGINS || [
+  'http://localhost:4200',
+  'https://www.hrpropninja.com',
+  'https://hrpropninja.com',
+  'http://www.hrpropninja.com',
+  'http://hrpropninja.com'
+].join(',');
+
+const corsOrigins = String(corsOriginsRaw)
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (corsOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Mount routers
 const auth = require('./routes/authRoutes');
