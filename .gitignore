@@ -11,6 +11,12 @@ yarn-error.log*
 # Environments / Secrets
 backend/.env
 frontend/.env
+backend/.env.local
+backend/.env.development
+backend/.env.production
+frontend/.env.local
+frontend/.env.development
+frontend/.env.production
 
 # Angular build artifacts and cache
 frontend/dist/
@@ -19,6 +25,11 @@ frontend/.angular/
 # Generated uploads and PDFs
 backend/uploads/
 backend/utils/*.pdf
+
+# Zip and archives
+*.zip
+*.tar
+*.tgz
 
 # Coverage and temp
 coverage/
@@ -32,4 +43,3 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
-

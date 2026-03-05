@@ -2,11 +2,14 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 
-// 1. Define URIs
-// OLD (Source)
-const SOURCE_URI = 'mongodb+srv://yashassk33_db_user:PrloPz51U2RJoKpr@cluster0.5flci2r.mongodb.net/prophr?appName=Cluster0';
-// NEW (Destination)
-const DEST_URI = 'mongodb+srv://atyour86_db_user:xJiFPtwifp9mI1h0@hr.1bcrs3l.mongodb.net/prophr?appName=hr';
+// 1. Define URIs from environment (never hardcode secrets)
+const SOURCE_URI = process.env.MIGRATE_SOURCE_URI;
+const DEST_URI = process.env.MIGRATE_DEST_URI;
+
+if (!SOURCE_URI || !DEST_URI) {
+  console.error('Missing MIGRATE_SOURCE_URI or MIGRATE_DEST_URI in environment. Aborting migration to avoid leaking credentials.');
+  process.exit(1);
+}
 
 // 2. Load Models
 const modelsDir = path.join(__dirname, '../models');
