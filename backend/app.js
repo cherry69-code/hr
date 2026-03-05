@@ -13,6 +13,13 @@ const connectDB = require('./config/db');
 // Load env vars
 dotenv.config();
 
+console.log('--- Environment Config Check ---');
+console.log('Cloudinary Cloud:', process.env.CLOUDINARY_CLOUD_NAME || 'MISSING');
+console.log('Cloudinary Key:', process.env.CLOUDINARY_API_KEY || 'MISSING');
+const secret = process.env.CLOUDINARY_API_SECRET || '';
+console.log('Cloudinary Secret:', secret ? (secret.startsWith('CLOUDINARY_URL') ? '❌ CORRUPTED (Starts with CLOUDINARY_URL)' : '✅ OK (Masked: ' + secret.substring(0, 3) + '...)') : 'MISSING');
+console.log('------------------------------');
+
 const app = express();
 
 // CORS Configuration (Must be first)
