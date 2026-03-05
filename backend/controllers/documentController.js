@@ -611,6 +611,11 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   } catch (e) {
     emailSent = false;
     emailError = e && e.message ? e.message : 'Email could not be sent';
+    console.error('Email Send Error:', e);
+  }
+
+  if (!emailSent) {
+      return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
   }
 
   res.status(200).json({
@@ -815,6 +820,11 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   } catch (e) {
     emailSent = false;
     emailError = e && e.message ? e.message : 'Email could not be sent';
+    console.error('Email Send Error:', e);
+  }
+
+  if (!emailSent) {
+      return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
   }
 
   res.status(200).json({
