@@ -1,1 +1,5 @@
-npm run lint && npm run backend:test
+#!/usr/bin/env sh
+. "$(dirname "$0")/_/husky.sh"
+
+node scripts/check-secrets.js
+

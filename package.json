@@ -4,7 +4,8 @@
   "scripts": {
     "lint": "npm --prefix backend run lint",
     "backend:test": "npm --prefix backend test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check:secrets": "node scripts/check-secrets.js"
   },
   "devDependencies": {
     "husky": "^9.1.7"
