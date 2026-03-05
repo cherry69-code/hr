@@ -284,13 +284,23 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Please upload a file' });
   }
 
-  // Basic file validation (expects data URL for PDFs)
+  // Basic file validation (expects data URL)
   if (typeof file === 'string') {
-    if (!file.startsWith('data:application/pdf;base64,')) {
-      return res.status(400).json({ success: false, error: 'Invalid file type: only PDF allowed' });
+    // Check for valid Data URL structure
+    const mimeMatch = file.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+    if (!mimeMatch) {
+      return res.status(400).json({ success: false, error: 'Invalid file format' });
     }
+
+    const mimeType = mimeMatch[1];
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(mimeType)) {
+      return res.status(400).json({ success: false, error: 'Invalid file type. Only PDF, JPG, PNG allowed.' });
+    }
+
     // Rough size check (base64 length ~1.37x real size). Limit ~10MB
-    const approxBytes = Math.floor((file.length - 'data:application/pdf;base64,'.length) * 0.75);
+    const base64Data = file.replace(/^data:.+;base64,/, '');
+    const approxBytes = Math.floor(base64Data.length * 0.75);
     if (approxBytes > 10 * 1024 * 1024) {
       return res.status(400).json({ success: false, error: 'File too large (max 10MB)' });
     }

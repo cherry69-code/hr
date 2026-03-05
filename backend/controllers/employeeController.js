@@ -62,6 +62,11 @@ exports.getManagers = asyncHandler(async (req, res, next) => {
 exports.createEmployee = asyncHandler(async (req, res, next) => {
   const { fullName, email, password, role, ...hrData } = req.body;
 
+  // Prevent HR from creating Admins
+  if (req.user.role === 'hr' && role === 'admin') {
+    return res.status(403).json({ success: false, error: 'HR cannot create Admin users' });
+  }
+
   const tempPassword = password || Math.random().toString(36).slice(-10);
 
   const employee = await User.create({
