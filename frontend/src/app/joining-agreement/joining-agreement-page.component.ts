@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { ToastService } from '../services/toast.service';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { environment } from '../../environments/environment';
+import { timeout } from 'rxjs';
 
 @Component({
   selector: 'app-joining-agreement-page',
@@ -18,10 +19,12 @@ export class JoiningAgreementPageComponent implements OnInit {
 
   departments: any[] = [];
   teams: any[] = [];
+  employees: any[] = [];
   sending = false;
   showSignaturePad = false;
 
   form: any = {
+    employeeId: '',
     salutation: 'Mr.',
     fullName: '',
     fatherName: '',
@@ -40,8 +43,35 @@ export class JoiningAgreementPageComponent implements OnInit {
   error = '';
 
   ngOnInit() {
+    this.loadEmployees();
     this.loadDepartments();
     this.loadTeams();
+  }
+
+  loadEmployees() {
+    this.http.get(`${environment.apiUrl}/employees`).subscribe({
+      next: (res: any) => this.employees = res.data || [],
+      error: (err) => console.error('Failed to load employees', err)
+    });
+  }
+
+  onEmployeeSelect(event: any) {
+    const empId = event.target.value;
+    if (!empId) return;
+
+    const emp = this.employees.find(e => e._id === empId);
+    if (emp) {
+        this.form.employeeId = emp._id;
+        this.form.fullName = emp.fullName;
+        this.form.email = emp.email;
+        this.form.designation = emp.designation || '';
+        this.form.address = emp.address || '';
+        this.form.departmentId = emp.departmentId?._id || '';
+        this.form.teamId = emp.teamId?._id || '';
+        this.form.joiningDate = emp.joiningDate ? new Date(emp.joiningDate).toISOString().split('T')[0] : '';
+        this.form.ctc = emp.salary?.ctc || '';
+        this.form.fatherName = emp.personalDetails?.fatherName || '';
+    }
   }
 
   loadDepartments() {
@@ -94,23 +124,32 @@ export class JoiningAgreementPageComponent implements OnInit {
       }
     });
 
-    this.http.post(`${environment.apiUrl}/documents/joining-agreement/send`, payload).subscribe({
-      next: (res: any) => {
-        this.result = res.data;
-        this.sending = false;
-        if (this.result?.emailSent) {
-          this.toast.success('Joining agreement signed & sent successfully!');
-        } else {
-          const reason = this.result?.emailError ? ` (${this.result.emailError})` : '';
-          this.toast.error(`Joining agreement generated, but email was not sent${reason}`);
+    this.http.post(`${environment.apiUrl}/documents/joining-agreement/send`, payload)
+      .pipe(timeout(20000)) // 20s timeout
+      .subscribe({
+        next: (res: any) => {
+          this.result = res.data;
+          this.sending = false;
+          // Check success flag even if status 200
+          if (res.success && res.data?.emailSent) {
+             this.toast.success(res.message || 'Joining agreement sent successfully!');
+          } else if (res.success) {
+             // Email failed but document generated
+             this.toast.error(res.message || 'Joining agreement generated but email failed.');
+          } else {
+             this.toast.error(res.error || 'Operation failed');
+          }
+        },
+        error: (err) => {
+          this.sending = false;
+          if (err.name === 'TimeoutError') {
+             this.error = 'Request timed out. The server took too long to respond.';
+          } else {
+             this.error = err.error?.error || 'Failed to send joining agreement';
+          }
+          this.toast.error(this.error);
         }
-      },
-      error: (err) => {
-        this.error = err.error?.error || 'Failed to send joining agreement';
-        this.sending = false;
-        this.toast.error(this.error);
-      }
-    });
+      });
   }
 }
 

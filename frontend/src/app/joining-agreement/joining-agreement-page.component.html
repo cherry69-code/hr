@@ -4,6 +4,16 @@
   </div>
 
   <form (ngSubmit)="initiateSend()" class="space-y-4">
+    <!-- Select Employee (Auto-fill) -->
+    <div class="space-y-1 bg-blue-50 p-4 rounded-xl border border-blue-100">
+      <label class="text-sm font-bold text-blue-800">Select Existing Employee (Optional)</label>
+      <select (change)="onEmployeeSelect($event)" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A] bg-white">
+        <option value="">-- Create New Candidate --</option>
+        <option *ngFor="let emp of employees" [value]="emp._id">{{ emp.fullName }} ({{ emp.email }})</option>
+      </select>
+      <p class="text-xs text-blue-600 mt-1">Selecting an employee will auto-fill the form below.</p>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="space-y-1">
         <label class="text-sm font-medium text-slate-700">Ms./Mr.</label>

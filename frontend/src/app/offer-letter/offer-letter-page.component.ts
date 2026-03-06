@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { ToastService } from '../services/toast.service';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { environment } from '../../environments/environment';
+import { timeout } from 'rxjs';
 
 @Component({
   selector: 'app-offer-letter-page',
@@ -18,10 +19,12 @@ export class OfferLetterPageComponent implements OnInit {
 
   departments: any[] = [];
   teams: any[] = [];
+  employees: any[] = [];
   sending = false;
   showSignaturePad = false;
 
   form: any = {
+    employeeId: '', // Add employeeId support
     salutation: 'Mr.',
     fullName: '',
     fatherName: '',
@@ -40,8 +43,42 @@ export class OfferLetterPageComponent implements OnInit {
   error = '';
 
   ngOnInit() {
+    this.loadEmployees();
     this.loadDepartments();
     this.loadTeams();
+  }
+
+  loadEmployees() {
+    this.http.get(`${environment.apiUrl}/employees`).subscribe({
+      next: (res: any) => this.employees = res.data || [],
+      error: (err) => console.error('Failed to load employees', err)
+    });
+  }
+
+  onEmployeeSelect(event: any) {
+    const empId = event.target.value;
+    if (!empId) {
+        // Clear form if deselected? Or keep? Let's keep to avoid accidental data loss.
+        return;
+    }
+
+    const emp = this.employees.find(e => e._id === empId);
+    if (emp) {
+        this.form.employeeId = emp._id;
+        this.form.fullName = emp.fullName;
+        this.form.email = emp.email;
+        this.form.designation = emp.designation || '';
+        this.form.address = emp.address || '';
+        this.form.departmentId = emp.departmentId?._id || '';
+        this.form.teamId = emp.teamId?._id || '';
+        this.form.joiningDate = emp.joiningDate ? new Date(emp.joiningDate).toISOString().split('T')[0] : '';
+        this.form.ctc = emp.salary?.ctc || '';
+        this.form.fatherName = emp.personalDetails?.fatherName || '';
+
+        // Note: PAN/Aadhar might be encrypted or not returned fully.
+        // Backend decrypts if HR requests? Or we might need to fetch profile specifically.
+        // For now, use what's in list.
+    }
   }
 
   loadDepartments() {
@@ -94,22 +131,31 @@ export class OfferLetterPageComponent implements OnInit {
       }
     });
 
-    this.http.post(`${environment.apiUrl}/documents/offer-letter/send`, payload).subscribe({
-      next: (res: any) => {
-        this.result = res.data;
-        this.sending = false;
-        if (res.data?.emailSent) {
-          this.toast.success('Offer letter signed & sent successfully!');
-        } else {
-          const reason = res.data?.emailError ? ` (${res.data.emailError})` : '';
-          this.toast.error(`Offer letter generated, but email was not sent${reason}`);
+    this.http.post(`${environment.apiUrl}/documents/offer-letter/send`, payload)
+      .pipe(timeout(20000)) // 20s timeout
+      .subscribe({
+        next: (res: any) => {
+          this.result = res.data;
+          this.sending = false;
+          // Check success flag even if status 200
+          if (res.success && res.data?.emailSent) {
+             this.toast.success(res.message || 'Offer letter sent successfully!');
+          } else if (res.success) {
+             // Email failed but document generated
+             this.toast.error(res.message || 'Offer letter generated but email failed.');
+          } else {
+             this.toast.error(res.error || 'Operation failed');
+          }
+        },
+        error: (err) => {
+          this.sending = false;
+          if (err.name === 'TimeoutError') {
+             this.error = 'Request timed out. The server took too long to respond.';
+          } else {
+             this.error = err.error?.error || 'Failed to send offer letter';
+          }
+          this.toast.error(this.error);
         }
-      },
-      error: (err) => {
-        this.error = err.error?.error || 'Failed to send offer letter';
-        this.sending = false;
-        this.toast.error(this.error);
-      }
-    });
+      });
   }
 }
