@@ -142,7 +142,8 @@ export class OfferLetterPageComponent implements OnInit {
              this.toast.success(res.message || 'Offer letter sent successfully!');
           } else if (res.success) {
              // Email failed but document generated
-             this.toast.error(res.message || 'Offer letter generated but email failed.');
+             console.log('Signing Link:', res.data?.signingLink); // Log to console for easy access
+             this.toast.info(`Offer generated. Email failed. Copy link from Console.`);
           } else {
              this.toast.error(res.error || 'Operation failed');
           }

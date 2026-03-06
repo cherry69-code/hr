@@ -135,7 +135,8 @@ export class JoiningAgreementPageComponent implements OnInit {
              this.toast.success(res.message || 'Joining agreement sent successfully!');
           } else if (res.success) {
              // Email failed but document generated
-             this.toast.error(res.message || 'Joining agreement generated but email failed.');
+             console.log('Signing Link:', res.data?.signingLink);
+             this.toast.info(`Agreement generated. Email failed. Copy link from Console.`);
           } else {
              this.toast.error(res.error || 'Operation failed');
           }
