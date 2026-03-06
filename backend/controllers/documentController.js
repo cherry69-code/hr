@@ -615,16 +615,20 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   }
 
   if (!emailSent) {
-      return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
+      // return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
+      // Fallback: Return success but with email warning
+      console.error('Email failed but document generated. Proceeding to update status.');
   }
 
   res.status(200).json({
     success: true,
+    message: emailSent ? 'Offer Letter sent successfully' : `Offer Letter generated but Email failed: ${emailError}`,
     data: {
       employeeId: employee._id,
       emailSent,
       pdfUrl,
-      emailError
+      emailError,
+      signingLink // Return link so admin can manually share if needed
     }
   });
 });
@@ -824,16 +828,19 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   }
 
   if (!emailSent) {
-      return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
+      // return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
+      console.error('Email failed but document generated. Proceeding to update status.');
   }
 
   res.status(200).json({
     success: true,
+    message: emailSent ? 'Joining Agreement sent successfully' : `Joining Agreement generated but Email failed: ${emailError}`,
     data: {
       employeeId: employee._id,
       emailSent,
       token, // Return token for debug/testing
-      emailError
+      emailError,
+      signingLink
     }
   });
 });
