@@ -604,8 +604,6 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
         ${pdfUrl ? `<p>You can also download the PDF copy here: <a href="${pdfUrl}">${pdfUrl}</a></p>` : ''}
         <p>Regards,<br/>Team HR</p>
       `
-      // Attachments handled by link usually, but if we have local file... we deleted it.
-      // So no attachment, just link.
     });
     emailSent = true;
   } catch (e) {
@@ -615,7 +613,6 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   }
 
   if (!emailSent) {
-      // return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
       // Fallback: Return success but with email warning
       console.error('Email failed but document generated. Proceeding to update status.');
   }
@@ -807,6 +804,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
 
   let emailSent = false;
   let emailError = '';
+  
   try {
     await sendEmail({
       email: employee.email,
@@ -828,7 +826,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   }
 
   if (!emailSent) {
-      // return res.status(500).json({ success: false, error: `Email failed: ${emailError}` });
+      // Fallback: Return success but with email warning
       console.error('Email failed but document generated. Proceeding to update status.');
   }
 
