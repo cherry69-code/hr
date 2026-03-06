@@ -19,7 +19,14 @@
 
       <div *ngIf="!loading && !error && !signed" class="space-y-4">
         <h3 class="font-bold text-gray-700">Document Preview</h3>
-        <div class="border rounded-xl p-4 max-h-[60vh] overflow-auto bg-gray-50" [innerHTML]="html"></div>
+
+        <!-- HTML Content -->
+        <div *ngIf="html" class="border rounded-xl p-4 max-h-[60vh] overflow-auto bg-gray-50" [innerHTML]="html"></div>
+
+        <!-- PDF Content (iframe) -->
+        <div *ngIf="pdfUrl" class="border rounded-xl h-[60vh] overflow-hidden bg-gray-50">
+            <iframe [src]="pdfUrl" class="w-full h-full border-0"></iframe>
+        </div>
 
         <div class="bg-blue-50 p-4 rounded-xl border border-blue-100">
             <label class="flex items-center gap-3 cursor-pointer">

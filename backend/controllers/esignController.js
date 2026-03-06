@@ -117,12 +117,12 @@ exports.getSigningPage = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Document already completed' });
   }
 
-  // Return HTML content (or PDF URL if we were using PDF.js, but user wants HTML)
-  // If htmlContent is stored, return it.
+  // Return HTML content (or PDF URL)
   res.status(200).json({
     success: true,
     data: {
       htmlContent: document.htmlContent,
+      pdfUrl: document.url, // Return PDF URL
       employeeName: (await User.findById(document.employeeId)).fullName,
       status: document.status
     }

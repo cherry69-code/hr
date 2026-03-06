@@ -25,6 +25,7 @@ export class EsignPublicComponent implements OnInit {
   loading = true;
   error = '';
   html: SafeHtml | null = null;
+  pdfUrl: SafeHtml | null = null;
   agreed = false;
   signed = false;
 
@@ -49,8 +50,14 @@ export class EsignPublicComponent implements OnInit {
     // Use the new API endpoint
     this.http.get(`${environment.apiUrl}/esign/sign/${this.token}`).subscribe({
       next: (res: any) => {
-        const htmlContent = res.data?.htmlContent || '';
-        this.html = this.sanitizer.bypassSecurityTrustHtml(htmlContent);
+        const htmlContent = res.data?.htmlContent;
+        const pdfUrl = res.data?.pdfUrl;
+
+        if (htmlContent) {
+            this.html = this.sanitizer.bypassSecurityTrustHtml(htmlContent);
+        } else if (pdfUrl) {
+            this.pdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(pdfUrl);
+        }
 
         if (res.data?.status === 'EmployeeSigned' || res.data?.status === 'Completed') {
             this.signed = true;
