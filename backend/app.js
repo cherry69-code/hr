@@ -106,6 +106,7 @@ const teams = require('./routes/teamRoutes');
 const templates = require('./routes/templateRoutes');
 const esign = require('./routes/esignRoutes');
 const vault = require('./routes/vaultRoutes');
+const geocode = require('./routes/geocodeRoutes');
 const errorHandler = require('./middlewares/errorMiddleware');
 
 app.use('/api/auth', auth);
@@ -123,6 +124,7 @@ app.use('/api/teams', teams);
 app.use('/api/templates', templates);
 app.use('/api/esign', esign);
 app.use('/api/vault', vault);
+app.use('/api/geocode', geocode);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

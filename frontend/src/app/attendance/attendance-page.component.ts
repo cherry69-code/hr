@@ -47,13 +47,11 @@ export class AttendancePageComponent implements OnInit {
   onSearchAddress() {
     const q = String(this.searchQuery || '').trim();
     if (!q) return;
-    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`)
-      .then(r => r.json())
-      .then((arr) => {
-        const it = Array.isArray(arr) && arr.length ? arr[0] : null;
-        if (!it) return;
-        const lat = Number(it.lat);
-        const lon = Number(it.lon);
+    this.http.get(`${environment.apiUrl}/geocode?query=${encodeURIComponent(q)}`).subscribe({
+      next: (res: any) => {
+        const lat = Number(res?.data?.lat);
+        const lon = Number(res?.data?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
         this.overrideLat = lat;
         this.overrideLng = lon;
         this.manualMode = true;
@@ -62,8 +60,9 @@ export class AttendancePageComponent implements OnInit {
           this.map.setView([lat, lon], 16);
         }
         this.computeNearest(lat, lon);
-      })
-      .catch(() => {});
+      },
+      error: () => {}
+    });
   }
 
   ngOnInit() {

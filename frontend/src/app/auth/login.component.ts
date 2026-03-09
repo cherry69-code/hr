@@ -22,7 +22,7 @@ export class LoginComponent {
   error = '';
   loading = false;
   bgStyle = {
-    backgroundImage: 'url(assets/hrimage.jpg)',
+    backgroundImage: 'url(assets/hrimage.jpg), url(assets/hrimage.png), url(assets/hrimage.jpeg), url(assets/Prop Ninja_Logo.jpg)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat'
