@@ -31,6 +31,10 @@ export class AttendancePageComponent implements OnInit {
   showOffsite = false;
   offsiteReason = '';
   photoFile: File | null = null;
+  manualMode = false;
+  overrideLat: number | null = null;
+  overrideLng: number | null = null;
+  searchQuery = '';
   selectedLocationId: string = '';
   // Map instance (Leaflet)
   private map: any;
@@ -38,6 +42,28 @@ export class AttendancePageComponent implements OnInit {
 
   get isAdmin() {
     return this.role === 'admin';
+  }
+
+  onSearchAddress() {
+    const q = String(this.searchQuery || '').trim();
+    if (!q) return;
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`)
+      .then(r => r.json())
+      .then((arr) => {
+        const it = Array.isArray(arr) && arr.length ? arr[0] : null;
+        if (!it) return;
+        const lat = Number(it.lat);
+        const lon = Number(it.lon);
+        this.overrideLat = lat;
+        this.overrideLng = lon;
+        this.manualMode = true;
+        if (this.userMarker && this.map) {
+          try { this.userMarker.setLatLng([lat, lon]); } catch {}
+          this.map.setView([lat, lon], 16);
+        }
+        this.computeNearest(lat, lon);
+      })
+      .catch(() => {});
   }
 
   ngOnInit() {
@@ -93,7 +119,14 @@ export class AttendancePageComponent implements OnInit {
       const lng = pos.coords.longitude;
       const userIcon = L.divIcon({ className: 'custom-user', html: '<div style=\"background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)\"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
       if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
-      this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
+      this.userMarker = L.marker([lat, lng], { icon: userIcon, draggable: true }).addTo(this.map).bindPopup('You are here');
+      this.userMarker.on('dragend', () => {
+        const p = this.userMarker.getLatLng();
+        this.overrideLat = p.lat;
+        this.overrideLng = p.lng;
+        this.manualMode = true;
+        this.computeNearest(p.lat, p.lng);
+      });
       this.computeNearest(lat, lng);
       const points: any[] = [[lat, lng], ...this.locations.map(l => [l.latitude, l.longitude])];
       this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
@@ -147,7 +180,8 @@ export class AttendancePageComponent implements OnInit {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const latitude = this.manualMode && this.overrideLat !== null ? this.overrideLat : position.coords.latitude;
+        const longitude = this.manualMode && this.overrideLng !== null ? this.overrideLng : position.coords.longitude;
         // If outside radius -> show offsite popup
         this.computeNearest(latitude, longitude);
         const todayRecord = this.attendanceRecords.find(r => {
@@ -164,10 +198,7 @@ export class AttendancePageComponent implements OnInit {
           this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
           return;
         }
-        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
-          latitude,
-          longitude
-        }).subscribe({
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, { latitude, longitude }).subscribe({
           next: (res: any) => {
             this.loading = false;
             this.statusMessage = 'Checked in successfully!';
@@ -191,8 +222,8 @@ export class AttendancePageComponent implements OnInit {
     if (!navigator.geolocation) return;
     this.loading = true;
     navigator.geolocation.getCurrentPosition((pos) => {
-      const latitude = pos.coords.latitude;
-      const longitude = pos.coords.longitude;
+      const latitude = this.manualMode && this.overrideLat !== null ? this.overrideLat : pos.coords.latitude;
+      const longitude = this.manualMode && this.overrideLng !== null ? this.overrideLng : pos.coords.longitude;
       // Convert photo to base64
       const reader = this.photoFile ? new FileReader() : null;
       const send = (photoBase64?: string) => {
