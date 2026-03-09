@@ -11,6 +11,9 @@
   </div>
 
   <div *ngIf="!loading" class="bg-white rounded-2xl shadow overflow-x-auto">
+    <div class="p-4 border-b">
+      <div id="locationsAdminMap" class="h-72 w-full rounded-xl border"></div>
+    </div>
     <table class="w-full text-left">
       <thead class="bg-gray-100">
         <tr>
@@ -60,6 +63,12 @@
           <input [(ngModel)]="form.name" name="name" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]" required />
         </div>
 
+        <div>
+          <label class="text-sm font-medium text-slate-700">Pick on Map</label>
+          <div id="locationPickerMap" class="h-64 w-full rounded-xl border"></div>
+          <div class="mt-2 text-xs text-slate-500">Click on map or drag marker to set Latitude/Longitude.</div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="text-sm font-medium text-slate-700">Latitude</label>
@@ -94,4 +103,3 @@
     </div>
   </div>
 </div>
-

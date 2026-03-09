@@ -6,6 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { LocationsPageComponent } from '../locations/locations-page.component';
 import { ToastService } from '../services/toast.service';
 import { environment } from '../../environments/environment';
+import * as L from 'leaflet';
 
 @Component({
   selector: 'app-attendance-page',
@@ -29,40 +30,12 @@ export class AttendancePageComponent implements OnInit {
   nearestDistanceMeters: number | null = null;
   // Offsite modal
   showOffsite = false;
-  offsiteReason = '';
-  photoFile: File | null = null;
-  manualMode = false;
-  overrideLat: number | null = null;
-  overrideLng: number | null = null;
-  searchQuery = '';
-  selectedLocationId: string = '';
   // Map instance (Leaflet)
   private map: any;
   private userMarker: any;
 
   get isAdmin() {
     return this.role === 'admin';
-  }
-
-  onSearchAddress() {
-    const q = String(this.searchQuery || '').trim();
-    if (!q) return;
-    this.http.get(`${environment.apiUrl}/geocode?query=${encodeURIComponent(q)}`).subscribe({
-      next: (res: any) => {
-        const lat = Number(res?.data?.lat);
-        const lon = Number(res?.data?.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-        this.overrideLat = lat;
-        this.overrideLng = lon;
-        this.manualMode = true;
-        if (this.userMarker && this.map) {
-          try { this.userMarker.setLatLng([lat, lon]); } catch {}
-          this.map.setView([lat, lon], 16);
-        }
-        this.computeNearest(lat, lon);
-      },
-      error: () => {}
-    });
   }
 
   ngOnInit() {
@@ -92,8 +65,6 @@ export class AttendancePageComponent implements OnInit {
   }
 
   initMap() {
-    if (typeof (window as any).L === 'undefined') return;
-    const L = (window as any).L;
     const defaultLat = this.locations[0]?.latitude || 12.9716;
     const defaultLng = this.locations[0]?.longitude || 77.5946;
     if (!this.map) {
@@ -112,23 +83,16 @@ export class AttendancePageComponent implements OnInit {
 
   renderUserLocation() {
     if (!navigator.geolocation) return;
-    const L = (window as any).L;
     navigator.geolocation.getCurrentPosition((pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       const userIcon = L.divIcon({ className: 'custom-user', html: '<div style=\"background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)\"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
       if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
-      this.userMarker = L.marker([lat, lng], { icon: userIcon, draggable: true }).addTo(this.map).bindPopup('You are here');
-      this.userMarker.on('dragend', () => {
-        const p = this.userMarker.getLatLng();
-        this.overrideLat = p.lat;
-        this.overrideLng = p.lng;
-        this.manualMode = true;
-        this.computeNearest(p.lat, p.lng);
-      });
+      this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
       this.computeNearest(lat, lng);
       const points: any[] = [[lat, lng], ...this.locations.map(l => [l.latitude, l.longitude])];
       this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
+      try { this.map.invalidateSize(); } catch {}
     });
   }
 
@@ -179,8 +143,8 @@ export class AttendancePageComponent implements OnInit {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const latitude = this.manualMode && this.overrideLat !== null ? this.overrideLat : position.coords.latitude;
-        const longitude = this.manualMode && this.overrideLng !== null ? this.overrideLng : position.coords.longitude;
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
         // If outside radius -> show offsite popup
         this.computeNearest(latitude, longitude);
         const todayRecord = this.attendanceRecords.find(r => {
@@ -215,50 +179,6 @@ export class AttendancePageComponent implements OnInit {
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
-  }
-
-  submitOffsite() {
-    if (!navigator.geolocation) return;
-    this.loading = true;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const latitude = this.manualMode && this.overrideLat !== null ? this.overrideLat : pos.coords.latitude;
-      const longitude = this.manualMode && this.overrideLng !== null ? this.overrideLng : pos.coords.longitude;
-      // Convert photo to base64
-      const reader = this.photoFile ? new FileReader() : null;
-      const send = (photoBase64?: string) => {
-        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
-          latitude, longitude, offsiteReason: this.offsiteReason, photoBase64, selectedLocationId: this.selectedLocationId || undefined
-        }).subscribe({
-          next: () => {
-            this.loading = false;
-            this.statusMessage = 'Off-site check-in submitted';
-            this.showOffsite = false;
-            this.offsiteReason = '';
-            this.photoFile = null;
-            this.selectedLocationId = '';
-            this.loadAttendance();
-          },
-          error: (err) => {
-            this.loading = false;
-            this.statusMessage = err.error?.error || 'Off-site check-in failed';
-          }
-        });
-      };
-      if (reader && this.photoFile) {
-        reader.onload = () => send(String(reader.result));
-        reader.readAsDataURL(this.photoFile);
-      } else {
-        send();
-      }
-    }, () => {
-      this.loading = false;
-      this.statusMessage = 'Location access denied. Please enable GPS.';
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-  }
-
-  onPhotoSelected(event: any) {
-    const file = event.target?.files?.[0];
-    if (file) this.photoFile = file;
   }
 
   checkOut() {
