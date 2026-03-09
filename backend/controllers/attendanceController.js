@@ -15,7 +15,7 @@ cloudinary.config({
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
 exports.checkIn = asyncHandler(async (req, res, next) => {
-  const { latitude, longitude, offsiteReason, photoBase64 } = req.body;
+  const { latitude, longitude, offsiteReason, photoBase64, selectedLocationId } = req.body;
   const employeeId = req.params.employeeId;
 
   if (!latitude || !longitude) {
@@ -43,9 +43,10 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   let withinRangeOfAny = false;
   let validLocation = null;
 
+  const STRICT_RADIUS = 20; // Enforced radius
   for (const loc of locations) {
     const distance = getDistance(latitude, longitude, loc.latitude, loc.longitude);
-    const radius = loc.radius || 20; // Default 20m if not specified
+    const radius = STRICT_RADIUS;
     
     if (distance <= radius) {
       withinRangeOfAny = true;
@@ -59,7 +60,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     }
   }
 
-  const allowedRadius = best.location.radius || 20;
+  const allowedRadius = STRICT_RADIUS;
   const day = new Date().getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   
   // Tuesday (2) to Friday (5) -> Remote Allowed
@@ -71,13 +72,22 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   let locationValidated = false;
   const isOnSiteRequired = [0, 6].includes(day); 
 
+  // If HR explicitly selected a location for off-site mapping, honor it
+  let overrideLocation = null;
+  if (selectedLocationId) {
+    overrideLocation = locations.find(l => String(l._id) === String(selectedLocationId)) || null;
+    if (overrideLocation) {
+      best = { location: overrideLocation, distance: getDistance(latitude, longitude, overrideLocation.latitude, overrideLocation.longitude) };
+    }
+  }
+
   if (withinRangeOfAny) {
     locationValidated = true; // Within range of at least one office
-  } else if (isOnSiteRequired) {
-    // If not within range of ANY office AND on-site required -> Block
+  } else {
+    // New policy: Off-site or any check-in allowed ONLY within 20m of approved locations
     return res.status(400).json({
       success: false,
-      error: `Check-in Failed: You are ${Math.round(best.distance)}m away from nearest office (${best.location.name}). On-site check-in is required today (Sat-Sun).`
+      error: `Check-in Failed: Allowed only within 20m of approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
     });
   }
   
@@ -118,7 +128,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     checkInTime: now,
     latitude,
     longitude,
-    locationId: best.location._id, // Store nearest or valid location
+    locationId: best.location._id, // Store nearest or explicitly selected location
     locationName: locationValidated ? best.location.name : `Remote (Nearest: ${best.location.name})`,
     status,
     locationValidated,

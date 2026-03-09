@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
 import { NavbarComponent } from '../navbar/navbar.component';
 import { ToastComponent } from '../../shared/components/toast/toast.component';
+import { Router, NavigationEnd } from '@angular/router';
 
 @Component({
   selector: 'app-layout',
@@ -50,6 +51,15 @@ import { ToastComponent } from '../../shared/components/toast/toast.component';
 })
 export class LayoutComponent {
   isMobileMenuOpen = false;
+  private router = inject(Router);
+
+  constructor() {
+    this.router.events.subscribe((ev) => {
+      if (ev instanceof NavigationEnd) {
+        this.isMobileMenuOpen = false;
+      }
+    });
+  }
 
   toggleMobileMenu() {
     this.isMobileMenuOpen = !this.isMobileMenuOpen;

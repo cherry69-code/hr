@@ -31,6 +31,7 @@ export class AttendancePageComponent implements OnInit {
   showOffsite = false;
   offsiteReason = '';
   photoFile: File | null = null;
+  selectedLocationId: string = '';
   // Map instance (Leaflet)
   private map: any;
   private userMarker: any;
@@ -108,7 +109,8 @@ export class AttendancePageComponent implements OnInit {
     }
     this.nearestLocationName = best.location.name;
     this.nearestDistanceMeters = Math.round(best.distance);
-    this.withinRadius = best.distance <= (best.location.radius || 20);
+    // Strict policy: 20m radius only
+    this.withinRadius = best.distance <= 20;
   }
 
   getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -158,8 +160,8 @@ export class AttendancePageComponent implements OnInit {
           return;
         }
         if (!this.withinRadius) {
-          this.showOffsite = true;
           this.loading = false;
+          this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
           return;
         }
         this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
@@ -180,7 +182,8 @@ export class AttendancePageComponent implements OnInit {
       (err) => {
         this.loading = false;
         this.statusMessage = 'Location access denied. Please enable GPS.';
-      }
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   }
 
@@ -194,7 +197,7 @@ export class AttendancePageComponent implements OnInit {
       const reader = this.photoFile ? new FileReader() : null;
       const send = (photoBase64?: string) => {
         this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
-          latitude, longitude, offsiteReason: this.offsiteReason, photoBase64
+          latitude, longitude, offsiteReason: this.offsiteReason, photoBase64, selectedLocationId: this.selectedLocationId || undefined
         }).subscribe({
           next: () => {
             this.loading = false;
@@ -202,6 +205,7 @@ export class AttendancePageComponent implements OnInit {
             this.showOffsite = false;
             this.offsiteReason = '';
             this.photoFile = null;
+            this.selectedLocationId = '';
             this.loadAttendance();
           },
           error: (err) => {
@@ -216,7 +220,7 @@ export class AttendancePageComponent implements OnInit {
       } else {
         send();
       }
-    });
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   }
 
   onPhotoSelected(event: any) {

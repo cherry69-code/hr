@@ -14,6 +14,7 @@ export class SidebarComponent {
   role = this.authService.getRole();
 
   menuItems = [
+    { label: 'Home', icon: 'home', link: '/home', roles: ['employee', 'manager'] },
     { label: 'Dashboard', icon: 'layout-dashboard', link: '/dashboard', roles: ['admin', 'hr', 'employee'] },
     { label: 'Employees', icon: 'users', link: '/employees', roles: ['admin', 'hr'] },
     { label: 'Attendance', icon: 'clock', link: '/attendance', roles: ['admin', 'hr', 'employee'] },

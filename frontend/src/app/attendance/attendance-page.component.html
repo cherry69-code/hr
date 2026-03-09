@@ -72,6 +72,13 @@
         <textarea [(ngModel)]="offsiteReason" rows="3" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]" placeholder="Explain why you are off-site"></textarea>
       </div>
       <div>
+        <label class="text-sm font-medium text-slate-700">Map to Location (optional)</label>
+        <select [(ngModel)]="selectedLocationId" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <option value="">Auto (Nearest)</option>
+          <option *ngFor="let loc of locations" [value]="loc._id">{{ loc.name }} ({{ loc.radius || 20 }}m)</option>
+        </select>
+      </div>
+      <div>
         <label class="text-sm font-medium text-slate-700">Upload Photo (optional)</label>
         <input type="file" accept="image/*" (change)="onPhotoSelected($event)" class="w-full" />
       </div>

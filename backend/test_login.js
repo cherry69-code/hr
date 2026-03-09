@@ -12,8 +12,8 @@ const testLogin = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('MongoDB Connected...');
 
-    const email = 'admin@propninja.com';
-    const password = 'Casper@123';
+  const email = process.argv[2] || 'admin@propninja.com';
+  const password = process.argv[3] || 'Casper@123';
 
     console.log(`Attempting to find user: ${email}`);
     const user = await User.findOne({ email }).select('+password');
