@@ -4,6 +4,7 @@ const cloudinary = require('cloudinary').v2;
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const asyncHandler = require('../middlewares/asyncHandler');
 const sendEmail = require('../utils/sendEmail');
@@ -734,24 +735,16 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
       // We reuse autoGenerateJoiningLetter logic logic but adapted for manual send
       // Or just create HTML based if PDF gen is complex here.
       // Let's create PDF for consistency.
-      const fileName = `joining_letter_${employee._id}_${Date.now()}.pdf`;
+      const fileName = `joining_agreement_${employee._id}_${Date.now()}.pdf`;
       const tempDir = os.tmpdir();
       const filePath = path.join(tempDir, fileName);
 
-      // We need a generateJoiningLetterPdf function. 
-      // Assuming generic logic or simple one.
-      // For now, let's create a simple PDF manually here if not using service.
-      const doc = new PDFDocument({ margin: 50 });
-      const writeStream = fs.createWriteStream(filePath);
-      doc.pipe(writeStream);
-      doc.fontSize(20).text('JOINING LETTER', { align: 'center' });
-      doc.moveDown();
-      doc.text(`Date: ${new Date().toLocaleDateString()}`);
-      doc.text(`Dear ${employee.fullName},`);
-      doc.text('Welcome to the team! Please sign this agreement.');
-      doc.end();
-
-      await new Promise((resolve) => writeStream.on('finish', resolve));
+      try {
+        await generateJoiningAgreementPdf(employee, filePath, { hrSignature });
+      } catch (err) {
+        console.error('PDF Generation Failed:', err);
+        return res.status(500).json({ success: false, error: 'Failed to generate Joining Agreement PDF' });
+      }
 
       let pdfUrl = '';
       try {
@@ -763,6 +756,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
         pdfUrl = uploaded.secure_url;
       } catch (e) {
          console.error('Cloudinary upload failed', e);
+         return res.status(500).json({ success: false, error: 'Failed to upload PDF to Cloudinary' });
       }
 
       token = crypto.randomBytes(32).toString('hex');
@@ -770,7 +764,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
 
       document = await Document.create({
         employeeId: employee._id,
-        type: 'joining_letter', // Use joining_letter for consistency
+        type: 'joining_agreement', 
         token,
         tokenExpiry,
         url: pdfUrl,
@@ -796,6 +790,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(employee._id, {
     $set: {
       'documents.joiningLetter': { url: document.url, uploadedAt: Date.now() },
+      'documents.joiningAgreement': { url: document.url, uploadedAt: Date.now() },
       status: 'JOINING_LETTER_PENDING'
     }
   });

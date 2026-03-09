@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { getCompanyLogoBuffer } = require('../utils/branding');
 const DocumentTemplate = require('../models/DocumentTemplate');
+const { decryptField } = require('../utils/fieldCrypto');
 
 // Helper to get template content from DB or File
 const getTemplateContent = async (type) => {
