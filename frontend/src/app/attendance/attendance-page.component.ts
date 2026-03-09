@@ -220,6 +220,9 @@ export class AttendancePageComponent implements OnInit {
       } else {
         send();
       }
+    }, () => {
+      this.loading = false;
+      this.statusMessage = 'Location access denied. Please enable GPS.';
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   }
 
