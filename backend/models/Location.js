@@ -28,5 +28,6 @@ const LocationSchema = new mongoose.Schema(
 );
 
 LocationSchema.index({ active: 1 });
+LocationSchema.index({ latitude: 1, longitude: 1 }); // For potential geospatial queries
 
 module.exports = mongoose.model('Location', LocationSchema);

@@ -8,10 +8,13 @@
     </div>
     <div class="flex items-center gap-4">
       <button (click)="handlePunch()" [disabled]="loading || isCheckedOut" class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2.5 rounded-lg shadow-sm font-medium transition-all flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <svg *ngIf="!isCheckedOut" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
         </svg>
-        {{ loading ? statusMessage : (isCheckedOut ? 'Day Completed' : (isCheckedIn ? 'Punch Out' : 'Punch In')) }}
+        <svg *ngIf="isCheckedOut" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+        {{ loading ? statusMessage : (isCheckedOut ? 'Home' : (isCheckedIn ? 'Punch Out' : 'Punch In')) }}
       </button>
       <div class="relative group">
         <img [src]="user?.profilePicture || 'https://ui-avatars.com/api/?name=' + (user?.name || 'User') + '&background=random'" alt="User" class="w-10 h-10 rounded-full border-2 border-white shadow-md cursor-pointer">

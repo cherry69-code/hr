@@ -138,14 +138,20 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   }
 
   initMap() {
+    if (this.map) {
+      this.map.remove();
+      this.map = null;
+    }
+
     const defaultLat = this.locations[0]?.latitude || 12.9716;
     const defaultLng = this.locations[0]?.longitude || 77.5946;
 
-    this.map = L.map('map').setView([defaultLat, defaultLng], 13);
+    this.map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([defaultLat, defaultLng], 13);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(this.map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
 
     this.mapInitialized = true;
 

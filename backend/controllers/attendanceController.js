@@ -30,7 +30,10 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   }
 
   // 2. Validate against configured locations
-  const locations = await Location.find({ active: true }).lean();
+  const locations = await Location.find({ active: true })
+    .select('latitude longitude name radius')
+    .lean();
+    
   if (!locations.length) {
     return res.status(400).json({ success: false, error: 'No attendance locations configured.' });
   }
@@ -199,23 +202,52 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
   const startOfDay = new Date(today.setHours(0, 0, 0, 0));
   const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
-  // Get all employees
-  const employees = await User.find({ role: { $ne: 'admin' } }).select('fullName role profilePicture').lean();
+  let query = { role: { $ne: 'admin' } };
+  
+  // Optimization: If user belongs to a team, only show team members
+  if (req.user.teamId) {
+    query.teamId = req.user.teamId;
+  } else if (req.user.role !== 'hr') {
+    // If not HR and no team, limit to department or just show self/peers?
+    // For now, let's limit to 50 to avoid performance issues
+    // query.departmentId = req.user.departmentId; // Optional: filter by department
+  }
 
-  // Get today's attendance
+  // Get employees (scoped)
+  const employees = await User.find(query)
+    .select('fullName role profilePicture')
+    .limit(100) // Safety limit
+    .lean();
+
+  if (!employees.length) {
+    return res.status(200).json({ success: true, data: [] });
+  }
+
+  const employeeIds = employees.map(e => e._id);
+
+  // Get today's attendance for these employees only
   const attendanceToday = await Attendance.find({
-    date: { $gte: startOfDay, $lte: endOfDay }
-  }).lean();
+    date: { $gte: startOfDay, $lte: endOfDay },
+    employeeId: { $in: employeeIds }
+  })
+  .select('employeeId status checkInTime')
+  .lean();
+
+  // Create Map for O(1) lookup
+  const attendanceMap = new Map();
+  attendanceToday.forEach(record => {
+    attendanceMap.set(record.employeeId.toString(), record);
+  });
 
   const teamData = employees.map(emp => {
-    const record = attendanceToday.find(a => a.employeeId.toString() === emp._id.toString());
+    const record = attendanceMap.get(emp._id.toString());
     
     let status = 'absent';
     if (record) {
       status = record.status ? record.status.toLowerCase() : 'present';
-      // Simple late logic: if checkIn > 9:30 AM
+      // Simple late logic: if checkIn > 10:00 AM (updated policy)
       const checkIn = new Date(record.checkInTime);
-      if (checkIn.getHours() > 9 || (checkIn.getHours() === 9 && checkIn.getMinutes() > 30)) {
+      if (checkIn.getHours() >= 10 && checkIn.getMinutes() > 0) {
         status = 'late';
       }
     }

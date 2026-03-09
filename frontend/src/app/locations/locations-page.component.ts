@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
+import { ToastService } from '../services/toast.service';
 import * as L from 'leaflet';
 
 @Component({
@@ -13,6 +14,7 @@ import * as L from 'leaflet';
 })
 export class LocationsPageComponent implements OnInit {
   private http = inject(HttpClient);
+  private toast = inject(ToastService);
 
   locations: any[] = [];
   loading = false;
@@ -105,6 +107,11 @@ export class LocationsPageComponent implements OnInit {
 
   closeModal() {
     this.showModal = false;
+    if (this.pickerMap) {
+      this.pickerMap.remove();
+      this.pickerMap = null;
+      this.pickerMarker = null;
+    }
   }
 
   initPickerMap() {
@@ -145,21 +152,41 @@ export class LocationsPageComponent implements OnInit {
   }
 
   save() {
+    if (!this.form.name || !this.form.name.trim()) {
+      this.toast.error('Location name is required');
+      return;
+    }
+    if (!this.form.latitude || !this.form.longitude) {
+      this.toast.error('Please pick a location on the map');
+      return;
+    }
+
+    const payload = {
+      ...this.form,
+      latitude: Number(this.form.latitude),
+      longitude: Number(this.form.longitude),
+      radius: this.form.radius ? Number(this.form.radius) : 20
+    };
+
     if (this.isEditing && this.currentId) {
-      this.http.put(`${environment.apiUrl}/locations/${this.currentId}`, this.form).subscribe({
+      this.http.put(`${environment.apiUrl}/locations/${this.currentId}`, payload).subscribe({
         next: () => {
-          this.showModal = false;
+          this.toast.success('Location updated successfully');
+          this.closeModal();
           this.loadLocations();
-        }
+        },
+        error: (err) => this.toast.error(err.error?.error || 'Failed to update location')
       });
       return;
     }
 
-    this.http.post(`${environment.apiUrl}/locations`, this.form).subscribe({
+    this.http.post(`${environment.apiUrl}/locations`, payload).subscribe({
       next: () => {
-        this.showModal = false;
+        this.toast.success('Location added successfully');
+        this.closeModal();
         this.loadLocations();
-      }
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Failed to add location')
     });
   }
 
