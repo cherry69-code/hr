@@ -12,7 +12,19 @@ export class IncentiveService {
   constructor(private http: HttpClient) {}
 
   calculate(data: any) {
-    return this.http.post(`${this.apiUrl}/payroll/calculate`, data);
+    return this.http.post(`${this.apiUrl}/incentives/calculate`, data);
+  }
+
+  getIncentives(params?: any): Observable<any> {
+    return this.http.get(`${this.apiUrl}/incentives`, { params });
+  }
+
+  getMyIncentiveSummary(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/incentives/my-summary`);
+  }
+
+  approveIncentive(id: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/incentives/${id}/approve`, {});
   }
 
   // Slabs

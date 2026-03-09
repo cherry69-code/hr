@@ -1,36 +1,114 @@
 <div class="p-6 bg-[#F1F5F9] min-h-screen">
 
   <h1 class="text-2xl font-bold text-[#0F172A] mb-6">
-    Incentive Analytics
+    Incentive Management
   </h1>
 
-  <div class="grid md:grid-cols-2 gap-6 mb-6">
-    <div class="bg-white p-6 rounded-2xl shadow">
-      <h2 class="text-lg font-bold text-gray-700 mb-4">Quarterly Payout Trends</h2>
-      <canvas baseChart
-        [data]="barChartData"
-        [options]="barChartOptions"
-        [type]="barChartType"
-        [legend]="barChartLegend">
-      </canvas>
+  <!-- Calculation Form -->
+  <div class="bg-white p-6 rounded-2xl shadow mb-8">
+    <h2 class="text-lg font-semibold mb-4 text-gray-800">Calculate Incentive</h2>
+    
+    <div class="grid md:grid-cols-4 gap-4 items-end">
+      
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Employee</label>
+        <select [(ngModel)]="form.employeeId" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+          <option value="">Select Employee</option>
+          <option *ngFor="let emp of employees" [value]="emp._id">
+            {{ emp.fullName }} ({{ emp.employeeId }})
+          </option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Period</label>
+        <input type="text" [(ngModel)]="form.period" placeholder="e.g. Q1 2024" 
+               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Achieved Amount (₹)</label>
+        <input type="number" [(ngModel)]="form.achievedAmount" placeholder="0" 
+               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Override Bonus (₹)</label>
+        <input type="number" [(ngModel)]="form.overrideBonus" placeholder="0" 
+               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+      </div>
+
     </div>
 
-    <div class="bg-white p-6 rounded-2xl shadow">
-      <h2 class="text-lg font-bold text-gray-700 mb-4">Payout Summary</h2>
-      <div class="space-y-4">
-        <div class="flex justify-between items-center p-4 bg-green-50 rounded-xl">
-          <span class="text-green-800 font-medium">Total Cash Paid (YTD)</span>
-          <span class="text-2xl font-bold text-green-700">₹1,47,000</span>
-        </div>
-        <div class="flex justify-between items-center p-4 bg-purple-50 rounded-xl">
-          <span class="text-purple-800 font-medium">Total ESOP Value (YTD)</span>
-          <span class="text-2xl font-bold text-purple-700">₹35,000</span>
-        </div>
-        <div class="flex justify-between items-center p-4 bg-blue-50 rounded-xl">
-          <span class="text-blue-800 font-medium">Top Performer Role</span>
-          <span class="text-2xl font-bold text-blue-700">N2</span>
-        </div>
-      </div>
+    <div class="mt-4 flex justify-end">
+      <button (click)="calculate()" [disabled]="loading" 
+              class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50">
+        {{ loading ? 'Calculating...' : 'Calculate & Add' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Incentives List -->
+  <div class="bg-white rounded-2xl shadow overflow-hidden">
+    <div class="p-6 border-b">
+      <h2 class="text-lg font-semibold text-gray-800">Incentive History</h2>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm text-gray-600">
+        <thead class="bg-gray-50 uppercase font-medium text-gray-500">
+          <tr>
+            <th class="p-4">Employee</th>
+            <th class="p-4">Period</th>
+            <th class="p-4">Target</th>
+            <th class="p-4">Achieved</th>
+            <th class="p-4">Incentive</th>
+            <th class="p-4">Status</th>
+            <th class="p-4">Calculated By</th>
+            <th class="p-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <tr *ngFor="let inc of incentives" class="hover:bg-gray-50">
+            <td class="p-4 font-medium text-gray-900">
+              {{ inc.employeeId?.fullName }}
+              <div class="text-xs text-gray-400">{{ inc.employeeId?.employeeId }}</div>
+            </td>
+            <td class="p-4">{{ inc.period }}</td>
+            <td class="p-4">₹{{ inc.targetAmount }}</td>
+            <td class="p-4">
+              ₹{{ inc.achievedAmount }}
+              <div class="text-xs text-green-600">({{ inc.achievementPercentage | number:'1.0-0' }}%)</div>
+            </td>
+            <td class="p-4 font-bold text-green-700">₹{{ inc.incentiveAmount }}</td>
+            <td class="p-4">
+              <span class="px-2 py-1 rounded-full text-xs font-medium"
+                [ngClass]="{
+                  'bg-yellow-100 text-yellow-800': inc.status === 'Pending',
+                  'bg-green-100 text-green-800': inc.status === 'Approved'
+                }">
+                {{ inc.status }}
+              </span>
+            </td>
+            <td class="p-4 text-xs">{{ inc.calculatedBy?.fullName || 'System' }}</td>
+            <td class="p-4 text-right">
+              <button *ngIf="inc.status === 'Pending' && currentUser?.role === 'admin'" 
+                      (click)="approve(inc._id)"
+                      class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs transition-colors">
+                Approve
+              </button>
+              <span *ngIf="inc.status === 'Approved'" class="text-gray-400 text-xs italic">
+                Approved
+              </span>
+            </td>
+          </tr>
+          <tr *ngIf="incentives.length === 0">
+            <td colspan="8" class="p-8 text-center text-gray-400">
+              No incentives records found.
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 

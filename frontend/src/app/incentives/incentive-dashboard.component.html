@@ -4,100 +4,84 @@
     Incentive Dashboard
   </h1>
 
-  <div class="grid md:grid-cols-4 gap-6 mb-6">
+  <div *ngIf="!data" class="text-center py-10 text-gray-500">
+    No incentive data available for the current period.
+  </div>
+
+  <div *ngIf="data" class="grid md:grid-cols-4 gap-6 mb-6">
 
     <div class="bg-white p-6 rounded-2xl shadow">
-      <p class="text-gray-500">Quarterly Incentive</p>
+      <p class="text-gray-500">Total Incentive</p>
       <h2 class="text-2xl font-bold text-[#16A34A]">
-        ₹{{ data?.incentive?.quarterlyIncentive }}
+        ₹{{ data?.incentiveAmount || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">Cash Payout</p>
       <h2 class="text-2xl font-bold text-[#0F172A]">
-        ₹{{ data?.incentive?.cashIncentive }}
+        ₹{{ data?.cashPayout || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">ESOP Allocation</p>
       <h2 class="text-2xl font-bold text-purple-600">
-        ₹{{ data?.incentive?.esop }}
+        ₹{{ data?.esopAllocation || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">Override Bonus</p>
       <h2 class="text-2xl font-bold text-orange-500">
-        ₹{{ data?.incentive?.override }}
+        ₹{{ data?.overrideBonus || 0 }}
       </h2>
     </div>
 
   </div>
 
-  <div class="bg-white p-6 rounded-2xl shadow mb-6">
+  <div *ngIf="data" class="bg-white p-6 rounded-2xl shadow mb-6">
 
-    <h2 class="text-lg font-semibold mb-4">Performance Details</h2>
+    <h2 class="text-lg font-semibold mb-4">Performance Details ({{ data?.period }})</h2>
 
     <div class="grid md:grid-cols-3 gap-4">
 
       <div>
         <p class="text-gray-500">Target</p>
-        <p class="font-semibold">₹{{ data?.target }}</p>
+        <p class="font-semibold">₹{{ data?.targetAmount || 0 }}</p>
       </div>
 
       <div>
-        <p class="text-gray-500">Achieved NR</p>
+        <p class="text-gray-500">Achieved Amount</p>
         <p class="font-semibold text-green-600">
-          ₹{{ data?.achievedNR }}
+          ₹{{ data?.achievedAmount || 0 }}
         </p>
       </div>
 
       <div>
-        <p class="text-gray-500">Achievement Multiple</p>
+        <p class="text-gray-500">Achievement %</p>
         <p class="font-semibold">
-          {{ data?.achievementMultiple }}x
+          {{ data?.achievementPercentage | number:'1.0-2' }}%
         </p>
       </div>
 
     </div>
 
-  </div>
-
-  <div class="bg-white p-6 rounded-2xl shadow">
-
-    <h2 class="text-lg font-semibold mb-4">Final Salary Impact</h2>
-
-    <table class="w-full text-left text-sm">
-
-      <thead class="bg-gray-100">
-        <tr>
-          <th class="p-3">Component</th>
-          <th>Amount</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        <tr class="border-t">
-          <td class="p-3">Gross Salary</td>
-          <td>₹{{ data?.gross }}</td>
-        </tr>
-        <tr class="border-t">
-          <td class="p-3">Monthly Incentive Accrual</td>
-          <td class="text-green-600">
-            ₹{{ data?.incentive?.monthlyIncentiveAccrual }}
-          </td>
-        </tr>
-        <tr class="border-t font-bold">
-          <td class="p-3">Net Salary</td>
-          <td class="text-[#16A34A]">
-            ₹{{ data?.netSalary }}
-          </td>
-        </tr>
-      </tbody>
-
-    </table>
+    <div class="mt-4 border-t pt-4 flex justify-between items-center">
+       <div>
+          <span class="text-gray-500 mr-2">Status:</span>
+          <span class="px-3 py-1 rounded-full text-xs font-medium"
+            [ngClass]="{
+                'bg-yellow-100 text-yellow-800': data?.status === 'Pending',
+                'bg-green-100 text-green-800': data?.status === 'Approved'
+            }">
+            {{ data?.status }}
+          </span>
+       </div>
+       <div *ngIf="data?.calculatedBy" class="text-sm text-gray-400">
+          Calculated by: {{ data?.calculatedBy?.fullName }}
+       </div>
+    </div>
 
   </div>
 

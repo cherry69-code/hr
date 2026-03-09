@@ -107,6 +107,7 @@ const templates = require('./routes/templateRoutes');
 const esign = require('./routes/esignRoutes');
 const vault = require('./routes/vaultRoutes');
 const geocode = require('./routes/geocodeRoutes');
+const incentives = require('./routes/incentiveRoutes');
 const errorHandler = require('./middlewares/errorMiddleware');
 
 app.use('/api/auth', auth);
@@ -125,6 +126,7 @@ app.use('/api/templates', templates);
 app.use('/api/esign', esign);
 app.use('/api/vault', vault);
 app.use('/api/geocode', geocode);
+app.use('/api/incentives', incentives);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

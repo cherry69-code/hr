@@ -11,26 +11,12 @@ import { IncentiveService } from '../services/incentive.service';
 export class IncentiveDashboardComponent implements OnInit {
   private incentiveService = inject(IncentiveService);
 
-  data: any;
-
-  payload: any = {
-    ctc: 1200000,
-    monthlyBasic: 50000,
-    role: 'N1',
-    target: 1000000,
-    achievedNR: 6000000,
-    teamIncentives: 0
-  };
+  data: any = null;
 
   ngOnInit() {
-    this.incentiveService.calculate(this.payload).subscribe({
+    this.incentiveService.getMyIncentiveSummary().subscribe({
       next: (res: any) => {
-        const payroll = res?.data || {};
-        this.data = {
-          ...this.payload,
-          ...payroll,
-          achievementMultiple: payroll?.incentive?.achievementMultiple
-        };
+        this.data = res.data;
       },
       error: () => {
         this.data = null;
