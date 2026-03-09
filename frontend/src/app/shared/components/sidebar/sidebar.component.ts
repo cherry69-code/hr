@@ -18,6 +18,7 @@ export class SidebarComponent {
     { label: 'Dashboard', icon: 'layout-dashboard', link: '/dashboard', roles: ['admin', 'hr', 'employee'] },
     { label: 'Employees', icon: 'users', link: '/employees', roles: ['admin', 'hr'] },
     { label: 'Attendance', icon: 'clock', link: '/attendance', roles: ['admin', 'hr', 'employee'] },
+    { label: 'Attendance Adjustment', icon: 'edit', link: '/attendance/adjustment', roles: ['admin', 'hr'] },
     { label: 'Leaves', icon: 'calendar', link: '/leaves', roles: ['admin', 'hr', 'employee'] },
     { label: 'Payroll', icon: 'banknote', link: '/payroll', roles: ['admin', 'hr', 'employee'] },
     { label: 'Locations', icon: 'map-pin', link: '/locations', roles: ['admin', 'hr'] },

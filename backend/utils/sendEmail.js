@@ -15,6 +15,7 @@ const sendEmail = async (options) => {
   const postmarkKey = rawPostmarkKey.startsWith('-') ? rawPostmarkKey.substring(1) : rawPostmarkKey;
 
   // 0) Prefer Postmark HTTP API (Known to be reliable)
+  // Since your Postmark app is approved for other domains, we use it directly.
   if (postmarkKey) {
     try {
       const to = options.to || options.email;

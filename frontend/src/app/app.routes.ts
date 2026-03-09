@@ -44,6 +44,11 @@ export const routes: Routes = [
         loadComponent: () => import('./attendance/attendance-page.component').then(m => m.AttendancePageComponent)
       },
       {
+        path: 'attendance/adjustment',
+        loadComponent: () => import('./attendance/attendance-adjustment.component').then(m => m.AttendanceAdjustmentComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
         path: 'employees',
         loadComponent: () => import('./employees/employee-list.component').then(m => m.EmployeeListComponent),
         data: { roles: ['admin', 'hr', 'manager'] }
