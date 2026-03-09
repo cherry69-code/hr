@@ -12,7 +12,10 @@
   <div *ngIf="!loading && !error" class="space-y-3">
     <div *ngFor="let d of docs" class="border rounded-xl p-4 flex items-center justify-between">
       <div>
-        <div class="font-semibold text-sm capitalize">{{ d.documentType }}</div>
+        <div class="font-semibold text-sm capitalize">
+          <span *ngIf="d.documentType !== 'payslip'">{{ d.documentType }}</span>
+          <span *ngIf="d.documentType === 'payslip'">Payslip {{ d.month }}/{{ d.year }}</span>
+        </div>
         <div class="text-xs text-gray-500">{{ d.createdAt | date:'medium' }}</div>
       </div>
       <a class="text-blue-600 hover:text-blue-800 font-medium text-sm" [href]="getDownloadUrl(d.fileUrl)" target="_blank">
@@ -22,4 +25,3 @@
     <div *ngIf="docs.length === 0" class="text-sm text-gray-500">No documents available.</div>
   </div>
 </div>
-

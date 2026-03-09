@@ -10,13 +10,16 @@ const calculatePayroll = async (employeeData) => {
 
   const ctcMonthly = annualCtc / 12;
 
-  const basic = Number(employeeData?.monthlyBasic ?? ctcMonthly * 0.5);
-  const hra = basic * 0.4;
+  const rawBasic = employeeData?.monthlyBasic;
+  const basic = Number(rawBasic !== undefined && rawBasic !== null && rawBasic !== '' ? rawBasic : ctcMonthly * 0.5);
   const employerPF = basic * 0.12;
   const employeePF = basic * 0.12;
   const gratuity = basic * 0.0481;
 
-  const gross = basic + hra;
+  const gross = Math.max(0, ctcMonthly - employerPF - gratuity);
+  const hra = ctcMonthly * 0.2;
+  const conveyance = ctcMonthly * 0.1;
+  const specialAllowance = Math.max(0, gross - basic - hra - conveyance);
 
   const incentiveData = calculateIncentive({
     role: employeeData?.role,
@@ -51,6 +54,8 @@ const calculatePayroll = async (employeeData) => {
     ctcMonthly: round2(ctcMonthly),
     basic: round2(basic),
     hra: round2(hra),
+    conveyance: round2(conveyance),
+    specialAllowance: round2(specialAllowance),
     employerPF: round2(employerPF),
     employeePF: round2(employeePF),
     gratuity: round2(gratuity),

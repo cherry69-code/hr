@@ -6,10 +6,10 @@
     </h2>
 
     <div class="flex items-center gap-2" *ngIf="role !== 'employee'">
-      <select [(ngModel)]="selectedMonth" class="border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      <select [(ngModel)]="selectedMonth" (change)="loadPayslipsForMonth()" class="border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]">
         <option *ngFor="let m of months" [value]="m.value">{{ m.name }}</option>
       </select>
-      <input type="number" [(ngModel)]="selectedYear" class="border rounded-xl px-3 py-2 w-24 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      <input type="number" [(ngModel)]="selectedYear" (change)="loadPayslipsForMonth()" class="border rounded-xl px-3 py-2 w-24 outline-none focus:ring-2 focus:ring-[#16A34A]">
     </div>
   </div>
 
@@ -33,11 +33,19 @@
               <div class="text-xs text-gray-500 font-normal">{{ emp.designation }}</div>
             </td>
             <td class="p-3 text-gray-600">{{ selectedMonth }}/{{ selectedYear }}</td>
-            <td class="p-3 font-semibold text-[#16A34A]">—</td>
+            <td class="p-3 font-semibold text-[#16A34A]">
+              <span *ngIf="payslipsByEmployeeId[emp._id]?.netSalary !== undefined">₹{{ payslipsByEmployeeId[emp._id]?.netSalary }}</span>
+              <span *ngIf="payslipsByEmployeeId[emp._id]?.netSalary === undefined">—</span>
+            </td>
             <td class="p-3">
-              <button (click)="generatePayslip(emp._id)" [disabled]="loading" class="bg-[#16A34A] text-white px-4 py-1 rounded-lg font-medium hover:bg-[#15803d] transition shadow-sm disabled:opacity-50">
-                {{ loading ? 'Generating...' : 'Generate & Download' }}
-              </button>
+              <div class="flex items-center gap-3">
+                <a *ngIf="payslipsByEmployeeId[emp._id]?.pdfUrl" [href]="payslipsByEmployeeId[emp._id]?.pdfUrl" target="_blank" class="text-blue-600 hover:text-blue-800 font-medium underline">
+                  Download
+                </a>
+                <button (click)="generatePayslip(emp._id)" [disabled]="loading" class="bg-[#16A34A] text-white px-4 py-1 rounded-lg font-medium hover:bg-[#15803d] transition shadow-sm disabled:opacity-50">
+                  {{ loading ? 'Generating...' : (payslipsByEmployeeId[emp._id]?.pdfUrl ? 'Regenerate' : 'Generate') }}
+                </button>
+              </div>
             </td>
           </tr>
         </ng-container>

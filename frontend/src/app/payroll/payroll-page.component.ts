@@ -20,6 +20,7 @@ export class PayrollPageComponent implements OnInit {
   role = this.authService.getRole();
   employees: any[] = [];
   payslips: any[] = [];
+  payslipsByEmployeeId: Record<string, any> = {};
   loading = false;
 
   // Month selection
@@ -43,8 +44,29 @@ export class PayrollPageComponent implements OnInit {
 
   loadEmployees() {
     this.http.get(`${environment.apiUrl}/employees`).subscribe({
-      next: (res: any) => this.employees = res.data,
+      next: (res: any) => {
+        this.employees = res.data || [];
+        this.loadPayslipsForMonth();
+      },
       error: (err) => this.toast.error(err.error?.error || 'Failed to load employees')
+    });
+  }
+
+  loadPayslipsForMonth() {
+    if (this.role === 'employee') return;
+    this.http.get(`${environment.apiUrl}/payroll/payslips?month=${this.selectedMonth}&year=${this.selectedYear}`).subscribe({
+      next: (res: any) => {
+        const rows = res.data || [];
+        const map: Record<string, any> = {};
+        for (const r of rows) {
+          const empId = r.employeeId?._id || r.employeeId;
+          if (empId) map[String(empId)] = r;
+        }
+        this.payslipsByEmployeeId = map;
+      },
+      error: () => {
+        this.payslipsByEmployeeId = {};
+      }
     });
   }
 
@@ -69,13 +91,14 @@ export class PayrollPageComponent implements OnInit {
         this.toast.success(`Payslip generated successfully. Net Pay: ₹${res.data.netSalary}`);
         this.loading = false;
 
-        // If employee, reload list. If admin, maybe open PDF?
         if (res.data.pdfUrl) {
           window.open(res.data.pdfUrl, '_blank');
         }
 
         if (this.role === 'employee') {
           this.loadMyPayslips();
+        } else {
+          this.payslipsByEmployeeId[String(userId)] = res.data;
         }
       },
       error: (err) => {

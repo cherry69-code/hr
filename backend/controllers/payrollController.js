@@ -1,9 +1,11 @@
 const Payslip = require('../models/Payslip');
+const EmployeeDocument = require('../models/EmployeeDocument');
 const User = require('../models/User');
 const asyncHandler = require('../middlewares/asyncHandler');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cloudinary = require('cloudinary').v2;
 const { calculatePayroll } = require('../services/payroll.service');
 const AuditLog = require('../models/AuditLog');
@@ -85,8 +87,8 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
 
   const monthName = new Date(y, m - 1).toLocaleString('default', { month: 'long' });
 
-  const fileName = `Payslip_${employee._id}_${m}_${y}_${Date.now()}.pdf`;
-  const filePath = path.join(__dirname, '../utils', fileName);
+  const fileName = `Payslip_${employee._id}_${y}_${String(m).padStart(2, '0')}.pdf`;
+  const filePath = path.join(os.tmpdir(), `${Date.now()}_${fileName}`);
 
   const doc = new PDFDocument({ margin: 50 });
   const writeStream = fs.createWriteStream(filePath);
@@ -133,6 +135,14 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
   doc.text(Number(payroll.deductions?.professionalTax || 0).toFixed(2), 550, yPos, { align: 'right' });
   yPos += 20;
 
+  doc.text('Conveyance', 50, yPos);
+  doc.text(Number(payroll.conveyance || 0).toFixed(2), 250, yPos, { align: 'right' });
+  yPos += 20;
+
+  doc.text('Special Allowance', 50, yPos);
+  doc.text(Number(payroll.specialAllowance || 0).toFixed(2), 250, yPos, { align: 'right' });
+  yPos += 20;
+
   doc.text('Monthly Incentive Accrual', 50, yPos);
   doc.text(Number(payroll.incentive?.monthlyIncentiveAccrual || 0).toFixed(2), 250, yPos, { align: 'right' });
   doc.text('TDS', 300, yPos);
@@ -172,12 +182,12 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     const result = await cloudinary.uploader.upload(filePath, {
       resource_type: 'raw',
       folder: 'payslips',
-      public_id: fileName,
+      public_id: `payslips/${employee._id}/${y}/${String(m).padStart(2, '0')}`,
       access_mode: 'public'
     });
     pdfUrl = result.secure_url;
-    fs.unlinkSync(filePath);
   } catch (error) {}
+  try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
 
   const payslipData = {
     employeeId: employee._id,
@@ -189,7 +199,7 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     earnings: {
       basic: payroll.basic,
       hra: payroll.hra,
-      specialAllowance: 0,
+      specialAllowance: Number(payroll.specialAllowance || 0),
       grossSalary: payroll.gross
     },
     salaryBreakdown: {
@@ -227,6 +237,22 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     payslipData,
     { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
   );
+
+  if (pdfUrl) {
+    const title = `Payslip - ${monthName} ${y}`;
+    await EmployeeDocument.findOneAndUpdate(
+      { employeeId: employee._id, documentType: 'payslip', month: m, year: y },
+      {
+        $set: {
+          fileUrl: pdfUrl,
+          title,
+          meta: { month: m, year: y },
+          sourcePayslipId: payslip._id
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).catch(() => {});
+  }
 
   try {
     await AuditLog.create({
@@ -273,5 +299,18 @@ exports.getPayslips = asyncHandler(async (req, res) => {
   }
 
   const payslips = await Payslip.find({ employeeId }).sort({ year: -1, month: -1 }).lean();
+  res.status(200).json({ success: true, count: payslips.length, data: payslips });
+});
+
+exports.getPayslipsForMonth = asyncHandler(async (req, res) => {
+  const m = Number(req.query.month);
+  const y = Number(req.query.year);
+  if (!m || m < 1 || m > 12 || !y) {
+    return res.status(400).json({ success: false, error: 'Please provide valid month and year' });
+  }
+  const payslips = await Payslip.find({ month: m, year: y })
+    .populate('employeeId', 'fullName email employeeId designation')
+    .sort({ updatedAt: -1 })
+    .lean();
   res.status(200).json({ success: true, count: payslips.length, data: payslips });
 });
