@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Leave = require('../models/Leave');
+const Attendance = require('../models/Attendance');
 const asyncHandler = require('../middlewares/asyncHandler');
 
 exports.getStats = asyncHandler(async (req, res, next) => {
@@ -8,7 +9,7 @@ exports.getStats = asyncHandler(async (req, res, next) => {
   if (employeeId) {
     const pendingLeaves = await Leave.countDocuments({ employeeId, status: 'pending' });
     const approvedLeaves = await Leave.countDocuments({ employeeId, status: 'approved' });
-    const totalAttendance = 20; // Mock
+    const totalAttendance = await Attendance.countDocuments({ employeeId });
 
     return res.status(200).json({
       success: true,
@@ -26,8 +27,23 @@ exports.getStats = asyncHandler(async (req, res, next) => {
   const offerLettersPending = await User.countDocuments({ status: 'OFFER_LETTER_PENDING' });
   const joiningPending = await User.countDocuments({ status: 'JOINING_LETTER_PENDING' });
 
-  // Get Payroll Status (Assuming Payroll model exists, otherwise count processed for this month)
-  // const payrollProcessed = await Payroll.countDocuments({ month: new Date().getMonth(), year: new Date().getFullYear(), status: 'paid' });
+  // Present/Absent Today using Attendance
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const presentToday = await Attendance.countDocuments({
+    date: { $gte: startOfDay, $lte: endOfDay }
+  });
+  const absentToday = Math.max(0, totalEmployees - presentToday);
+
+  // Total Payroll (monthly) in Lakhs, computed from employees' annual CTC
+  const employees = await User.find({ role: 'employee' }).select('salary.ctc').lean();
+  let monthlyTotal = 0;
+  for (const e of employees) {
+    const annual = (e.salary && typeof e.salary.ctc === 'number') ? e.salary.ctc : 0;
+    monthlyTotal += annual / 12;
+  }
+  const totalPayrollL = Math.round((monthlyTotal / 100000) * 100) / 100; // round to 2 decimals
 
   res.status(200).json({
     success: true,
@@ -39,8 +55,9 @@ exports.getStats = asyncHandler(async (req, res, next) => {
           offerPending: offerLettersPending,
           joiningPending: joiningPending
       },
-      presentToday: Math.floor(totalEmployees * 0.9), 
-      absentToday: Math.floor(totalEmployees * 0.1)
+      presentToday, 
+      absentToday,
+      totalPayroll: totalPayrollL
     }
   });
 });
