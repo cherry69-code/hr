@@ -356,54 +356,88 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   }
 
   calculateStats() {
-    if (!this.attendanceRecords.length) return;
+    if (!this.attendanceRecords.length) {
+      this.resetStats();
+      return;
+    }
+
+    const currentYear = this.currentDate.getFullYear();
+    const currentMonth = this.currentDate.getMonth();
+
+    // Filter records for the currently displayed month
+    const monthlyRecords = this.attendanceRecords.filter(record => {
+      const recordDate = new Date(record.date);
+      return recordDate.getFullYear() === currentYear && recordDate.getMonth() === currentMonth;
+    });
+
+    if (monthlyRecords.length === 0) {
+      this.resetStats();
+      return;
+    }
 
     let totalWorkMs = 0;
     let workDaysCount = 0;
     let onTimeCount = 0;
     let totalCheckInMinutes = 0;
+    let validCheckInCount = 0;
 
-    this.attendanceRecords.forEach(record => {
+    monthlyRecords.forEach(record => {
       // Avg Working Hours
+      // Only count completed shifts (with check-out)
       if (record.checkInTime && record.checkOutTime) {
         totalWorkMs += new Date(record.checkOutTime).getTime() - new Date(record.checkInTime).getTime();
         workDaysCount++;
       }
 
-      // On Time Arrival (assuming 9:30 AM is late)
-      const checkIn = new Date(record.checkInTime);
-      const threshold = new Date(checkIn);
-      threshold.setHours(9, 30, 0, 0);
-      if (checkIn <= threshold) {
-        onTimeCount++;
+      // On Time Arrival (Late Check-in > 10:00 AM)
+      if (record.checkInTime) {
+        const checkIn = new Date(record.checkInTime);
+        const threshold = new Date(checkIn);
+        threshold.setHours(10, 0, 0, 0); // 10:00 AM Policy
+
+        if (checkIn <= threshold) {
+          onTimeCount++;
+        }
+
+        // Average Check-in Time
+        totalCheckInMinutes += checkIn.getHours() * 60 + checkIn.getMinutes();
+        validCheckInCount++;
       }
-
-      // Average Check-in Time
-      totalCheckInMinutes += checkIn.getHours() * 60 + checkIn.getMinutes();
     });
-
-    const totalRecords = this.attendanceRecords.length;
 
     // Avg Working Hours
     if (workDaysCount > 0) {
       const avgMs = totalWorkMs / workDaysCount;
       const hours = Math.floor(avgMs / (1000 * 60 * 60));
       const minutes = Math.floor((avgMs % (1000 * 60 * 60)) / (1000 * 60));
-      this.stats.avgWorkingHours = `${hours}:${minutes.toString().padStart(2, '0')}`;
+      this.stats.avgWorkingHours = `${hours}:${minutes.toString().padStart(2, '0')} Hrs`;
+    } else {
+      this.stats.avgWorkingHours = '00:00 Hrs';
     }
 
     // On Time Arrival
-    this.stats.onTimeArrival = totalRecords > 0 ? `${Math.round((onTimeCount / totalRecords) * 100)}%` : '0%';
+    // Calculate percentage based on total valid check-ins for the month
+    this.stats.onTimeArrival = validCheckInCount > 0 ? `${Math.round((onTimeCount / validCheckInCount) * 100)}%` : '0%';
 
     // Average Check-in Time
-    if (totalRecords > 0) {
-      const avgMinutes = totalCheckInMinutes / totalRecords;
+    if (validCheckInCount > 0) {
+      const avgMinutes = totalCheckInMinutes / validCheckInCount;
       const hours = Math.floor(avgMinutes / 60);
       const minutes = Math.floor(avgMinutes % 60);
       const period = hours >= 12 ? 'PM' : 'AM';
       const displayHours = hours % 12 || 12;
       this.stats.averageTime = `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+    } else {
+      this.stats.averageTime = '--:--';
     }
+  }
+
+  resetStats() {
+    this.stats = {
+      avgWorkingHours: '00:00 Hrs',
+      onTimeArrival: '0%',
+      averageTime: '--:--'
+    };
   }
 
   mapAttendanceToCalendar() {
@@ -494,6 +528,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
     this.daysInMonth = [];
     this.generateCalendar();
     this.mapAttendanceToCalendar();
+    this.calculateStats();
   }
 
   nextMonth() {
@@ -501,6 +536,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
     this.daysInMonth = [];
     this.generateCalendar();
     this.mapAttendanceToCalendar();
+    this.calculateStats();
   }
 
   logout() {
