@@ -21,6 +21,12 @@ export class LoginComponent {
 
   error = '';
   loading = false;
+  bgStyle = {
+    backgroundImage: 'url(assets/hrimage.jpg)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat'
+  } as any;
 
   onSubmit() {
     this.loading = true;
