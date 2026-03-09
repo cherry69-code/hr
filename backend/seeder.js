@@ -130,6 +130,7 @@ const importData = async () => {
       console.log('Employee user already exists.');
     }
 
+    /*
     const hasAnyLocation = await Location.countDocuments();
     if (!hasAnyLocation) {
       await Location.create({
@@ -141,6 +142,7 @@ const importData = async () => {
       });
       console.log('Default Location Created: PropNinja HQ');
     }
+    */
 
     // Create Hierarchy: PnL -> N3 -> N2 -> N1 -> N0
     let pnlHead = await User.findOne({ email: 'pnl1@propninja.com' });
