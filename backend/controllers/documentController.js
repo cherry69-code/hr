@@ -371,8 +371,6 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: user, url: result.secure_url });
 });
 
-const os = require('os');
-
 exports.autoGenerateOfferLetter = async (user, hrId) => {
     // 1. Prepare file path
     const fileName = `offer_letter_${user._id}_${Date.now()}.pdf`;
