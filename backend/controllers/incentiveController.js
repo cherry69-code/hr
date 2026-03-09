@@ -32,25 +32,37 @@ exports.calculateIncentive = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: `No active slab found for role/level: ${roleForSlab}` });
   }
 
-  const target = slab.eligibilityTarget;
+  // Target = Multiplier * Monthly CTC
+  // slab.eligibilityTarget now stores the Multiplier (e.g. 5)
+  const multiplier = slab.eligibilityTarget || 5; 
+  const monthlySalary = (employee.salary && employee.salary.ctc) ? (employee.salary.ctc / 12) : 0;
+  const target = monthlySalary * multiplier;
+  
+  // Prevent division by zero if salary is missing
+  if (target === 0) {
+      return res.status(400).json({ success: false, error: 'Employee salary not set or zero. Cannot calculate target.' });
+  }
+
   const achievementPct = (achievedAmount / target) * 100;
   
   let incentiveAmount = 0;
   let esopAllocation = 0;
 
-  // Calculation Logic (Simplified based on Slab fields)
-  // If achieved >= target, apply percentage
+  // Calculation Logic
+  // 1. Calculate base incentive on the Target Amount
+  // 2. Calculate extra incentive on the amount EXCEEDING the target
+  
   if (achievedAmount >= target) {
-      // Logic: if achieved > target, use abovePercentage, else basePercentage? 
-      // Usually base is for meeting target, above is for exceeding.
-      // Let's assume:
-      // Incentive = Achieved * (Percentage / 100)
+      // Base Incentive: Target * Base Percentage
+      const baseIncentive = target * (slab.basePercentage / 100);
       
-      const pct = achievementPct > 100 ? slab.abovePercentage : slab.basePercentage;
-      incentiveAmount = achievedAmount * (pct / 100);
+      // Above Target Incentive: (Achieved - Target) * Above Percentage
+      const extraAmount = achievedAmount - target;
+      const extraIncentive = extraAmount * (slab.abovePercentage / 100);
       
-      // ESOP: Percentage of Incentive? Or fixed?
-      // Schema says esopPercentage (Number). Let's assume it's % of incentive amount
+      incentiveAmount = baseIncentive + extraIncentive;
+      
+      // ESOP Allocation
       esopAllocation = incentiveAmount * (slab.esopPercentage / 100);
   }
 

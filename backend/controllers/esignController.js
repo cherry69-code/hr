@@ -2,7 +2,7 @@ const Document = require('../models/Document');
 const User = require('../models/User');
 const crypto = require('crypto');
 const asyncHandler = require('../middlewares/asyncHandler');
-const { generateFinalPdfWithSignatures } = require('../services/documentGenerator.service'); // We'll update this service
+const { generateFinalPdfWithSignatures, generateDocumentHtml } = require('../services/documentGenerator.service'); // We'll update this service
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
@@ -485,4 +485,74 @@ exports.hrSignDocument = asyncHandler(async (req, res, next) => {
   fs.unlinkSync(filePath);
 
   res.status(200).json({ success: true, data: document, emailSent: emailResult.emailSent, emailError: emailResult.emailError });
+});
+
+// @desc    Generate Document Preview (HTML)
+// @route   POST /api/esign/hr/generate
+// @access  Private (HR/Admin)
+exports.generateDocument = asyncHandler(async (req, res, next) => {
+  const { employeeId, documentType } = req.body;
+
+  const employee = await User.findById(employeeId).populate('departmentId teamId');
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  // Generate HTML
+  const htmlContent = await generateDocumentHtml(documentType, employee);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      htmlContent
+    }
+  });
+});
+
+// @desc    Send Document for E-Sign
+// @route   POST /api/esign/hr/send
+// @access  Private (HR/Admin)
+exports.sendDocument = asyncHandler(async (req, res, next) => {
+  const { employeeId, documentType, htmlContent, publicBaseUrl } = req.body;
+
+  const employee = await User.findById(employeeId);
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  // Generate unique token
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  // Create Document Record
+  const document = await Document.create({
+    employeeId,
+    type: documentType,
+    status: 'Sent',
+    token,
+    tokenExpiry,
+    htmlContent, // Store the HTML content for consistency
+    // HR is creating it, so we can assume HR signature is done/approved or will be countersigned later
+    // In this flow, HR sends first, Employee signs, then HR countersigns (if not already embedded)
+    // The current flow in HrDocumentsPage is: Generate -> Send -> Employee Signs -> HR Countersigns
+    // So status is 'Sent' (to Employee)
+  });
+
+  // Send Email to Employee
+  const signLink = `${publicBaseUrl}/esign/${token}`;
+  
+  const emailResult = await sendEmail({
+    to: employee.email,
+    subject: `Action Required: Please Sign your ${getDocumentTitle(documentType)}`,
+    html: `
+      <p>Dear ${employee.fullName},</p>
+      <p>Please review and sign your ${getDocumentTitle(documentType)} by clicking the link below:</p>
+      <p><a href="${signLink}" style="display:inline-block;background:#16A34A;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Review & Sign Document</a></p>
+      <p>Or copy this link: ${signLink}</p>
+      <p>This link is valid for 7 days.</p>
+      <p>Regards,<br/>HR Team</p>
+    `
+  }).then(() => ({ emailSent: true })).catch(err => ({ emailSent: false, emailError: err.message }));
+
+  res.status(200).json({ success: true, data: { document, emailSent: emailResult.emailSent, emailError: emailResult.emailError } });
 });

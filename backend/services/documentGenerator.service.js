@@ -38,67 +38,93 @@ const dataUrlToBuffer = (dataUrl) => {
   return Buffer.from(matches[2], 'base64');
 };
 
-const addWatermark = (doc, logoBuffer) => {
-  doc.save();
-  doc.fillColor('#0F172A');
-  doc.opacity(0.1); // Increased opacity for better visibility
-  
-  // Center of the page
-  const centerX = doc.page.width / 2;
-  const centerY = doc.page.height / 2;
-  
-  if (logoBuffer) {
-    try {
-        // Draw image centered without rotation
-        doc.image(logoBuffer, centerX - 150, centerY - 150, { width: 300 });
-    } catch {
-        doc.fontSize(80).font('Helvetica-Bold').text('PROP NINJA', 0, centerY - 80, { align: 'center' });
-    }
-  } else {
-    doc.fontSize(80).font('Helvetica-Bold').text('PROP NINJA', 0, centerY - 80, { align: 'center' });
-  }
-  
-  doc.opacity(1);
-  doc.restore();
-};
-
 const addHeader = (doc, logoBuffer) => {
   const y = 30;
+  
+  // Custom Header Design (Top Left Logo + Blue Line)
   if (logoBuffer) {
     try {
-      doc.image(logoBuffer, 50, y, { height: 32 });
-    } catch {}
+      doc.image(logoBuffer, 50, y, { height: 40 });
+    } catch {
+      doc.fontSize(18).fillColor('#0F172A').text('PROP', 50, y, { continued: true });
+      doc.fillColor('#16A34A').text('NINJA');
+    }
   } else {
     doc.fontSize(18).fillColor('#0F172A').text('PROP', 50, y, { continued: true });
     doc.fillColor('#16A34A').text('NINJA');
-    doc.fillColor('black');
   }
 
-  doc.moveTo(50, y + 44).lineTo(doc.page.width - 50, y + 44).strokeColor('#E2E8F0').stroke();
-  doc.moveDown(2);
+  // Blue Line (Full Width)
+  doc.rect(150, y + 20, doc.page.width - 200, 2)
+     .fillColor('#1E3A8A') // Dark Blue
+     .fill();
+
+  doc.moveDown(3);
 };
 
 const addFooter = (doc, pageNo) => {
   const y = doc.page.height - 40;
   
-  // Custom Footer Design (Geometric)
+  // Custom Footer Design (Geometric Bar + Contact Info)
   doc.save();
   
-  // Red Chevron
-  doc.path('M 0 842 L 50 842 L 80 812 L 30 812 Z')
+  // Geometric Bottom Bar
+  const barHeight = 20;
+  const barY = doc.page.height - barHeight;
+
+  // Left Red Triangle
+  doc.path(`M 0 ${barY} L 100 ${barY} L 130 ${doc.page.height} L 0 ${doc.page.height} Z`)
      .fillColor('#DC2626') // Red
      .fill();
-     
-  // Blue Bar
-  doc.rect(50, 832, doc.page.width - 50, 10)
+
+  // Right Red Triangle
+  doc.path(`M ${doc.page.width} ${barY} L ${doc.page.width - 100} ${barY} L ${doc.page.width - 130} ${doc.page.height} L ${doc.page.width} ${doc.page.height} Z`)
+     .fillColor('#DC2626') // Red
+     .fill();
+
+  // Center Blue Bar
+  doc.rect(0, barY + 5, doc.page.width, 15)
      .fillColor('#1E3A8A') // Dark Blue
      .fill();
 
   doc.restore();
 
-  doc.fontSize(8).fillColor('#64748B').text('PropNinja HR • Confidential', 50, y - 10, { align: 'left' });
-  doc.fontSize(8).fillColor('#64748B').text(`Page ${pageNo}`, 50, y - 10, { align: 'right' });
+  // Contact Info Row
+  const infoY = y - 15;
+  doc.fontSize(7).fillColor('#333333');
+  
+  // Icons could be simulated with text or small images if available. using text for now.
+  doc.text('WWW.PROPNINJA.COM', 100, infoY, { align: 'left' });
+  doc.text('CONTACT@PROPNINJA.COM', 250, infoY, { align: 'left' });
+  doc.text('+91 7039011696', 450, infoY, { align: 'left' });
+
   doc.fillColor('black');
+};
+
+const addWatermark = (doc, logoBuffer) => {
+  doc.save();
+  doc.opacity(0.08); // Very faint
+  
+  const centerX = doc.page.width / 2;
+  const centerY = doc.page.height / 2;
+  
+  if (logoBuffer) {
+    try {
+        // Large Center Logo
+        doc.image(logoBuffer, centerX - 100, centerY - 100, { width: 200 });
+        
+        // Text next to logo (optional, matching image style)
+        // doc.fontSize(40).font('Helvetica-Bold').fillColor('#1E3A8A').text('PROP', centerX + 20, centerY - 15);
+        // doc.fillColor('#87CEEB').text('NINJA', centerX + 140, centerY - 15);
+    } catch {
+        doc.fontSize(60).font('Helvetica-Bold').text('PROPNINJA', 0, centerY - 30, { align: 'center' });
+    }
+  } else {
+    doc.fontSize(60).font('Helvetica-Bold').text('PROPNINJA', 0, centerY - 30, { align: 'center' });
+  }
+  
+  doc.opacity(1);
+  doc.restore();
 };
 
 const drawSalaryTable = (doc, employee) => {
@@ -240,7 +266,7 @@ exports.generateOfferLetterPdf = async (employee, filePath, signatures = {}) => 
   const lines = offerContent.split('\n');
   for (const line of lines) {
     if (line.trim()) {
-      // checkPageBreak(); // DISABLED to force content on first page if possible
+      checkPageBreak();
       
       // Check for Custom Signature Placeholders
       if (line.includes('{{hrSignature}}')) {

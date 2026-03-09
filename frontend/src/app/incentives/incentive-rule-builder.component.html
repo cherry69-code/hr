@@ -19,8 +19,8 @@
         </div>
 
         <div>
-          <label class="block text-sm text-gray-500 mb-1">Eligibility Target (₹)</label>
-          <input type="number" [(ngModel)]="newSlab.eligibilityTarget" name="eligibilityTarget" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
+          <label class="block text-sm text-gray-500 mb-1">Target Multiplier (e.g. 5x)</label>
+          <input type="number" [(ngModel)]="newSlab.eligibilityTarget" name="eligibilityTarget" placeholder="5" class="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-[#16A34A]">
         </div>
 
         <div>
@@ -63,7 +63,7 @@
           <thead class="bg-gray-50">
             <tr>
               <th class="p-3">Role</th>
-              <th class="p-3">Target</th>
+              <th class="p-3">Multiplier</th>
               <th class="p-3">Base %</th>
               <th class="p-3">Above %</th>
               <th class="p-3">Status</th>
@@ -73,7 +73,7 @@
           <tbody>
             <tr *ngFor="let slab of slabs" class="border-t hover:bg-gray-50">
               <td class="p-3 font-medium">{{ slab.role }}</td>
-              <td class="p-3">₹{{ slab.eligibilityTarget }}</td>
+              <td class="p-3">{{ slab.eligibilityTarget }}x</td>
               <td class="p-3">{{ slab.basePercentage }}%</td>
               <td class="p-3">{{ slab.abovePercentage }}%</td>
               <td class="p-3">

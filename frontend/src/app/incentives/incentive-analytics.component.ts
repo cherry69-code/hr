@@ -31,6 +31,11 @@ export class IncentiveAnalyticsComponent implements OnInit {
     overrideBonus: 0
   };
 
+  // Bulk Calculation
+  bulkPeriod = '';
+  bulkData: any[] = [];
+  showBulkMode = false;
+
   ngOnInit() {
     this.authService.currentUser$.subscribe((user: any) => this.currentUser = user);
     this.loadEmployees();
@@ -39,10 +44,73 @@ export class IncentiveAnalyticsComponent implements OnInit {
 
   loadEmployees() {
     this.http.get(`${environment.apiUrl}/employees`).subscribe({
-      next: (res: any) => this.employees = res.data || [],
+      next: (res: any) => {
+        this.employees = res.data || [];
+        this.initBulkData();
+      },
       error: () => this.toast.error('Failed to load employees')
     });
   }
+
+  initBulkData() {
+    // Filter out Admins if necessary, keep Sales/Employees
+    this.bulkData = this.employees
+      .filter(e => e.role !== 'admin')
+      .map(e => ({
+        employeeId: e._id,
+        name: e.fullName,
+        role: e.level || e.role,
+        achievedAmount: 0,
+        overrideBonus: 0,
+        status: 'Pending' // UI status
+      }));
+  }
+
+  toggleBulkMode() {
+    this.showBulkMode = !this.showBulkMode;
+    if (this.showBulkMode && !this.bulkPeriod) {
+        // Set default period to current month/quarter?
+        const date = new Date();
+        this.bulkPeriod = `${date.toLocaleString('default', { month: 'long' })} ${date.getFullYear()}`;
+    }
+  }
+
+  async calculateBulk() {
+    if (!this.bulkPeriod) {
+      this.toast.error('Please enter a period for bulk calculation');
+      return;
+    }
+
+    this.loading = true;
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const item of this.bulkData) {
+        // Skip if 0 achieved?
+        // if (item.achievedAmount <= 0) continue;
+
+        try {
+            const payload = {
+                employeeId: item.employeeId,
+                period: this.bulkPeriod,
+                achievedAmount: item.achievedAmount,
+                overrideBonus: item.overrideBonus
+            };
+
+            await this.incentiveService.calculate(payload).toPromise();
+            successCount++;
+        } catch (err) {
+            console.error(err);
+            failCount++;
+        }
+    }
+
+    this.loading = false;
+    this.toast.success(`Processed: ${successCount} Success, ${failCount} Failed`);
+    this.loadIncentives();
+    this.showBulkMode = false;
+  }
+
 
   loadIncentives() {
     this.incentiveService.getIncentives().subscribe({
