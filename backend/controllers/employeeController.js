@@ -172,20 +172,59 @@ exports.updateEmployee = asyncHandler(async (req, res, next) => {
 
   const updates = { ...req.body };
   
-  // Handle nested updates for personalDetails and documents if sent partially
+  const cleanObject = (obj) => {
+    Object.keys(obj).forEach(key => {
+      if (obj[key] === undefined || obj[key] === null || obj[key] === '' || obj[key] === 'undefined') {
+        delete obj[key];
+      }
+    });
+    return obj;
+  };
+  
   if (updates.personalDetails) {
-    employee.personalDetails = { ...employee.personalDetails, ...updates.personalDetails };
+    if (typeof updates.personalDetails === 'object' && !Array.isArray(updates.personalDetails)) {
+      const cleanDetails = cleanObject({ ...updates.personalDetails });
+      if (Object.keys(cleanDetails).length > 0) {
+        Object.keys(cleanDetails).forEach(k => {
+          if (!employee.personalDetails) employee.personalDetails = {};
+          employee.personalDetails[k] = cleanDetails[k];
+        });
+      }
+    }
     delete updates.personalDetails;
   }
+
   if (updates.documents) {
-    employee.documents = { ...employee.documents, ...updates.documents };
+    if (typeof updates.documents === 'object' && !Array.isArray(updates.documents)) {
+      const cleanDocs = cleanObject({ ...updates.documents });
+      if (Object.keys(cleanDocs).length > 0) {
+        Object.keys(cleanDocs).forEach(k => {
+          const val = cleanDocs[k];
+          if (val === undefined || val === null || val === '' || val === 'undefined') return;
+          if (typeof val !== 'object' || Array.isArray(val)) return;
+          const cleanedVal = cleanObject({ ...val });
+          if (Object.keys(cleanedVal).length === 0) return;
+          if (!employee.documents) employee.documents = {};
+          employee.documents[k] = cleanedVal;
+        });
+      }
+    }
     delete updates.documents;
   }
 
+  const password = updates.password;
+  delete updates.password;
+
   Object.keys(updates).forEach((key) => {
-    employee[key] = updates[key];
+    if (updates[key] !== undefined && updates[key] !== 'undefined') {
+        employee[key] = updates[key];
+    }
   });
 
+  if (password) {
+    employee.password = password;
+  }
+  
   await employee.save();
 
   const safeEmployee = await User.findById(employee._id)

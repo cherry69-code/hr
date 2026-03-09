@@ -295,10 +295,12 @@ exports.signDocument = asyncHandler(async (req, res, next) => {
 
           const updateField = {};
           if (document.type === 'joining_agreement') {
-            updateField['documents.joiningAgreement'] = { url: finalUrl, uploadedAt: Date.now() };
-            updateField['documents.joiningLetter'] = { url: finalUrl, uploadedAt: Date.now() };
+            updateField['documents.joiningAgreement'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+            updateField['documents.joiningLetter'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+            updateField['status'] = 'active';
           } else if (document.type === 'offer_letter') {
-            updateField['documents.offerLetter'] = { url: finalUrl, uploadedAt: Date.now() };
+            updateField['documents.offerLetter'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+            updateField['status'] = 'OFFER_LETTER_SIGNED';
           }
 
           if (employee && employee._id && Object.keys(updateField).length) {
@@ -317,10 +319,12 @@ exports.signDocument = asyncHandler(async (req, res, next) => {
 
             const updateField = {};
             if (document.type === 'joining_agreement') {
-              updateField['documents.joiningAgreement'] = { url: finalUrl, uploadedAt: Date.now() };
-              updateField['documents.joiningLetter'] = { url: finalUrl, uploadedAt: Date.now() };
+              updateField['documents.joiningAgreement'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+              updateField['documents.joiningLetter'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+              updateField['status'] = 'active';
             } else if (document.type === 'offer_letter') {
-              updateField['documents.offerLetter'] = { url: finalUrl, uploadedAt: Date.now() };
+              updateField['documents.offerLetter'] = { url: finalUrl, signed: true, uploadedAt: Date.now() };
+              updateField['status'] = 'OFFER_LETTER_SIGNED';
             }
 
             if (employee && employee._id && Object.keys(updateField).length) {

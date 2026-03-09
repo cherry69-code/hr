@@ -191,6 +191,8 @@ export class EmployeeListComponent implements OnInit {
     if (!payload.teamId) delete payload.teamId;
     if (!payload.departmentId) delete payload.departmentId;
     if (!payload.reportingManagerId) delete payload.reportingManagerId;
+    delete payload.documents;
+    delete payload.personalDetails;
 
     this.http.put(`${environment.apiUrl}/employees/${this.currentEmployeeId}`, payload).subscribe({
       next: () => {
