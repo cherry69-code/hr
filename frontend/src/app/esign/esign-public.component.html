@@ -20,6 +20,11 @@
       <div *ngIf="!loading && !error && !signed" class="space-y-4">
         <h3 class="font-bold text-gray-700">Document Preview</h3>
 
+        <div *ngIf="rawPdfUrl || pdfUrl" class="flex gap-3 items-center text-sm">
+          <a *ngIf="rawPdfUrl" [href]="rawPdfUrl" target="_blank" rel="noopener" class="text-blue-600 underline">Open PDF in new tab</a>
+          <a *ngIf="viewerUrl" [href]="viewerUrl" target="_blank" rel="noopener" class="text-blue-600 underline">Open via Google Viewer</a>
+        </div>
+
         <!-- HTML Content -->
         <div *ngIf="html" class="border rounded-xl p-4 max-h-[60vh] overflow-auto bg-gray-50" [innerHTML]="html"></div>
 

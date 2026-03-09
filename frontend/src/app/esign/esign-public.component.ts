@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer, SafeHtml, SafeResourceUrl } from '@angular/platform-browser';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { ToastService } from '../services/toast.service';
 import { ToastComponent } from '../shared/components/toast/toast.component';
@@ -25,7 +25,9 @@ export class EsignPublicComponent implements OnInit {
   loading = true;
   error = '';
   html: SafeHtml | null = null;
-  pdfUrl: SafeHtml | null = null;
+  pdfUrl: SafeResourceUrl | null = null;
+  rawPdfUrl: SafeResourceUrl | null = null;
+  viewerUrl: SafeResourceUrl | null = null;
   agreed = false;
   signed = false;
 
@@ -51,12 +53,13 @@ export class EsignPublicComponent implements OnInit {
     this.http.get(`${environment.apiUrl}/esign/sign/${this.token}`).subscribe({
       next: (res: any) => {
         const htmlContent = res.data?.htmlContent;
-        const pdfUrl = res.data?.pdfUrl;
+        const pdfUrl = `${environment.apiUrl}/esign/pdf/${this.token}`;
 
         if (htmlContent) {
             this.html = this.sanitizer.bypassSecurityTrustHtml(htmlContent);
-        } else if (pdfUrl) {
-            this.pdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(pdfUrl);
+        } else {
+            this.rawPdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(pdfUrl);
+            this.pdfUrl = this.rawPdfUrl;
         }
 
         if (res.data?.status === 'EmployeeSigned' || res.data?.status === 'Completed') {

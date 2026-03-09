@@ -1,25 +1,38 @@
 <div class="max-w-md mx-auto" *ngIf="!isAdmin">
 
-  <div class="bg-white p-8 rounded-2xl shadow text-center">
+  <div class="bg-white p-8 rounded-2xl shadow">
 
-    <h2 class="text-xl font-bold text-[#0F172A] mb-4">
-      Mark Attendance
-    </h2>
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold text-[#0F172A]">Work Attendance</h2>
+      <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ withinRadius ? 'OK' : 'Out of Range' }}</span></div>
+    </div>
 
     <div *ngIf="statusMessage" class="mb-4 p-3 rounded-xl text-sm font-medium"
       [ngClass]="statusMessage.includes('successfully') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
       {{ statusMessage }}
     </div>
 
-    <button (click)="markAttendance()" [disabled]="loading"
-      class="w-full bg-[#16A34A] text-white py-3 rounded-xl mb-3 font-bold hover:bg-[#15803d] transition disabled:opacity-50">
-      {{ loading ? 'Processing...' : 'Check In' }}
-    </button>
+    <!-- Map -->
+    <div class="mb-4">
+      <div id="attendanceMap" class="h-64 w-full rounded-lg border"></div>
+      <div class="mt-2 text-sm text-gray-700 flex justify-between">
+        <span><span class="font-medium">Nearest:</span> {{ nearestLocationName || 'Locating...' }}</span>
+        <span><span class="font-medium">Distance:</span> {{ nearestDistanceMeters !== null ? nearestDistanceMeters + 'm' : '-' }}</span>
+      </div>
+    </div>
 
-    <button (click)="checkOut()" [disabled]="loading"
-      class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50">
-      Check Out
-    </button>
+    <!-- Sticky button area -->
+    <div class="sticky bottom-4 flex flex-col gap-3">
+      <button (click)="markAttendance()" [disabled]="loading"
+        class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
+        [ngClass]="withinRadius ? 'bg-[#16A34A] text-white hover:bg-[#15803d]' : 'bg-yellow-500 text-black hover:bg-yellow-600'">
+        {{ withinRadius ? (loading ? 'Processing...' : 'Check In') : 'Off-site Punch' }}
+      </button>
+      <button (click)="checkOut()" [disabled]="loading"
+        class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50">
+        Check Out
+      </button>
+    </div>
 
   </div>
 
@@ -44,4 +57,30 @@
 
 <div *ngIf="isAdmin">
   <app-locations-page></app-locations-page>
+</div>
+
+<!-- Offsite Modal -->
+<div *ngIf="showOffsite" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="text-xl font-bold text-[#0F172A]">Off-site Check-in</h2>
+      <button (click)="showOffsite=false" class="text-slate-400 hover:text-slate-600">✕</button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="text-sm font-medium text-slate-700">Reason</label>
+        <textarea [(ngModel)]="offsiteReason" rows="3" class="w-full border rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-[#16A34A]" placeholder="Explain why you are off-site"></textarea>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Upload Photo (optional)</label>
+        <input type="file" accept="image/*" (change)="onPhotoSelected($event)" class="w-full" />
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 pt-4 border-t mt-4">
+      <button type="button" (click)="showOffsite=false" class="px-4 py-2 border rounded-xl hover:bg-slate-50 transition">Cancel</button>
+      <button type="button" (click)="submitOffsite()" class="bg-[#16A34A] text-white px-6 py-2 rounded-xl font-medium hover:bg-[#15803d] transition">
+        Submit Off-site Check-in
+      </button>
+    </div>
+  </div>
 </div>

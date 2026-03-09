@@ -3,12 +3,19 @@ const User = require('../models/User');
 const Location = require('../models/Location');
 const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // @desc    Mark attendance (Check-in)
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
 exports.checkIn = asyncHandler(async (req, res, next) => {
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, offsiteReason, photoBase64 } = req.body;
   const employeeId = req.params.employeeId;
 
   if (!latitude || !longitude) {
@@ -90,6 +97,20 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     status = 'Weekly Off Work'; // Or keep 'Present' / 'Overtime'
   }
 
+  // Optional selfie upload when offsite
+  let photoUrl = '';
+  if (!locationValidated && offsiteReason && photoBase64) {
+    try {
+      const uploaded = await cloudinary.uploader.upload(photoBase64, {
+        folder: 'attendance/selfies',
+        resource_type: 'image'
+      });
+      photoUrl = uploaded.secure_url;
+    } catch (e) {
+      // continue without photo
+    }
+  }
+
   // 4. Create Attendance Record
   const attendance = await Attendance.create({
     employeeId: employee._id,
@@ -100,7 +121,10 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     locationId: best.location._id, // Store nearest or valid location
     locationName: locationValidated ? best.location.name : `Remote (Nearest: ${best.location.name})`,
     status,
-    locationValidated
+    locationValidated,
+    insideRadius: locationValidated,
+    offsiteReason: offsiteReason || '',
+    photoUrl
   });
 
   res.status(201).json({ success: true, data: attendance });
@@ -111,6 +135,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 // @access  Private
 exports.checkOut = asyncHandler(async (req, res, next) => {
   const employeeId = req.params.employeeId;
+  const { latitude, longitude } = req.body || {};
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -126,6 +151,10 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
 
   const checkOutTime = new Date();
   attendance.checkOutTime = checkOutTime;
+  if (latitude && longitude) {
+    attendance.checkOutLatitude = latitude;
+    attendance.checkOutLongitude = longitude;
+  }
   
   // Calculate Duration
   const durationMs = checkOutTime - new Date(attendance.checkInTime);

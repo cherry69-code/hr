@@ -13,8 +13,10 @@ const AttendanceSchema = new mongoose.Schema({
   },
   checkInTime: Date,
   checkOutTime: Date,
-  latitude: Number,
-  longitude: Number,
+  latitude: Number, // legacy: check-in latitude
+  longitude: Number, // legacy: check-in longitude
+  checkOutLatitude: Number,
+  checkOutLongitude: Number,
   locationId: {
     type: mongoose.Schema.ObjectId,
     ref: 'Location'
@@ -23,6 +25,18 @@ const AttendanceSchema = new mongoose.Schema({
   locationValidated: {
     type: Boolean,
     default: false
+  },
+  insideRadius: {
+    type: Boolean,
+    default: false
+  },
+  offsiteReason: {
+    type: String,
+    trim: true
+  },
+  photoUrl: {
+    type: String,
+    trim: true
   },
   status: {
     type: String,

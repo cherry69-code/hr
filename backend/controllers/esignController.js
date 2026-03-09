@@ -6,6 +6,8 @@ const { generateFinalPdfWithSignatures } = require('../services/documentGenerato
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const { URL } = require('url');
 const AuditLog = require('../models/AuditLog');
 
 cloudinary.config({
@@ -122,10 +124,87 @@ exports.getSigningPage = asyncHandler(async (req, res, next) => {
     success: true,
     data: {
       htmlContent: document.htmlContent,
-      pdfUrl: document.url, // Return PDF URL
+      pdfUrl: document.url,
+      signedPdfUrl: (() => {
+        try {
+          const original = String(document.url || '');
+          // Extract publicId: res.cloudinary.com/<cloud>/raw/upload/v1234/<publicId>.pdf
+          const match = original.match(/\/raw\/upload\/(?:v\d+\/)?(.+)\.pdf$/);
+          if (!match || !match[1]) return '';
+          const publicId = match[1]; // includes folder e.g. 'documents/joining_letter_...'
+          // Generate a signed URL to avoid 401 on direct access
+          const signed = cloudinary.url(publicId, {
+            resource_type: 'raw',
+            type: 'upload',
+            format: 'pdf',
+            secure: true,
+            sign_url: true
+          });
+          return signed || '';
+        } catch (e) {
+          return '';
+        }
+      })(),
       employeeName: (await User.findById(document.employeeId)).fullName,
       status: document.status
     }
+  });
+});
+
+// @desc    Get document PDF for signing preview (proxied)
+// @route   GET /api/esign/pdf/:token
+// @access  Public
+exports.getSigningPdf = asyncHandler(async (req, res) => {
+  const { token } = req.params;
+  const document = await Document.findOne({ token }).lean();
+
+  if (!document) {
+    return res.status(404).send('Not found');
+  }
+
+  if (document.tokenExpiry && document.tokenExpiry < Date.now()) {
+    return res.status(400).send('Link expired');
+  }
+
+  const original = String(document.url || '');
+  const match = original.match(/\/raw\/upload\/(?:v\d+\/)?(.+)\.pdf$/);
+  if (!match || !match[1]) {
+    return res.status(404).send('PDF not available');
+  }
+
+  const publicId = `${match[1]}.pdf`;
+  const signedDownloadUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+    resource_type: 'raw',
+    type: 'upload',
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + 300
+  });
+
+  const u = new URL(signedDownloadUrl);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+  res.setHeader('Cache-Control', 'no-store');
+
+  await new Promise((resolve, reject) => {
+    const req2 = https.request(
+      {
+        method: 'GET',
+        hostname: u.hostname,
+        path: `${u.pathname}${u.search}`,
+        headers: { 'User-Agent': 'prophr' }
+      },
+      (resp) => {
+        if (resp.statusCode && resp.statusCode >= 400) {
+          res.status(resp.statusCode).end();
+          resolve(null);
+          return;
+        }
+        resp.pipe(res);
+        resp.on('end', resolve);
+      }
+    );
+    req2.on('error', reject);
+    req2.end();
   });
 });
 

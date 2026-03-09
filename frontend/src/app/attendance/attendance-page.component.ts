@@ -1,5 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../services/auth.service';
 import { LocationsPageComponent } from '../locations/locations-page.component';
@@ -9,7 +10,7 @@ import { environment } from '../../environments/environment';
 @Component({
   selector: 'app-attendance-page',
   standalone: true,
-  imports: [CommonModule, LocationsPageComponent],
+  imports: [CommonModule, FormsModule, LocationsPageComponent],
   templateUrl: './attendance-page.component.html'
 })
 export class AttendancePageComponent implements OnInit {
@@ -21,6 +22,18 @@ export class AttendancePageComponent implements OnInit {
   attendanceRecords: any[] = [];
   loading = false;
   statusMessage = '';
+  // Map/Geofence
+  locations: any[] = [];
+  withinRadius = false;
+  nearestLocationName = '';
+  nearestDistanceMeters: number | null = null;
+  // Offsite modal
+  showOffsite = false;
+  offsiteReason = '';
+  photoFile: File | null = null;
+  // Map instance (Leaflet)
+  private map: any;
+  private userMarker: any;
 
   get isAdmin() {
     return this.role === 'admin';
@@ -29,6 +42,7 @@ export class AttendancePageComponent implements OnInit {
   ngOnInit() {
     if (!this.isAdmin) {
       this.loadAttendance();
+      this.loadActiveLocations();
     }
   }
 
@@ -40,6 +54,75 @@ export class AttendancePageComponent implements OnInit {
         this.toast.error(err.error?.error || 'Failed to load attendance');
       }
     });
+  }
+
+  loadActiveLocations() {
+    this.http.get(`${environment.apiUrl}/locations/active`).subscribe({
+      next: (res: any) => {
+        this.locations = res.data || [];
+        setTimeout(() => this.initMap(), 0);
+      }
+    });
+  }
+
+  initMap() {
+    if (typeof (window as any).L === 'undefined') return;
+    const L = (window as any).L;
+    const defaultLat = this.locations[0]?.latitude || 12.9716;
+    const defaultLng = this.locations[0]?.longitude || 77.5946;
+    if (!this.map) {
+      this.map = L.map('attendanceMap').setView([defaultLat, defaultLng], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(this.map);
+    }
+    // Render office locations
+    for (const loc of this.locations) {
+      const officeIcon = L.divIcon({ className: 'custom-office', html: '<div style=\"background:#10b981;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(16,185,129,0.3)\"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
+      L.marker([loc.latitude, loc.longitude], { icon: officeIcon }).addTo(this.map).bindPopup(`${loc.name} (${loc.radius || 20}m)`);
+      L.circle([loc.latitude, loc.longitude], { radius: loc.radius || 20, color: '#10b981', fillColor: '#10b981', fillOpacity: 0.1 }).addTo(this.map);
+    }
+    // Render user marker
+    this.renderUserLocation();
+  }
+
+  renderUserLocation() {
+    if (!navigator.geolocation) return;
+    const L = (window as any).L;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const userIcon = L.divIcon({ className: 'custom-user', html: '<div style=\"background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)\"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
+      if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
+      this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
+      this.computeNearest(lat, lng);
+      const points: any[] = [[lat, lng], ...this.locations.map(l => [l.latitude, l.longitude])];
+      this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
+    });
+  }
+
+  computeNearest(lat: number, lng: number) {
+    if (!this.locations.length) { this.withinRadius = false; this.nearestLocationName = ''; this.nearestDistanceMeters = null; return; }
+    let best: any = null;
+    for (const loc of this.locations) {
+      const d = this.getDistanceMeters(lat, lng, loc.latitude, loc.longitude);
+      if (!best || d < best.distance) best = { location: loc, distance: d };
+    }
+    this.nearestLocationName = best.location.name;
+    this.nearestDistanceMeters = Math.round(best.distance);
+    this.withinRadius = best.distance <= (best.location.radius || 20);
+  }
+
+  getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   markAttendance() {
@@ -63,6 +146,22 @@ export class AttendancePageComponent implements OnInit {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
+        // If outside radius -> show offsite popup
+        this.computeNearest(latitude, longitude);
+        const todayRecord = this.attendanceRecords.find(r => {
+          const d = new Date(r.date);
+          const today = new Date();
+          return d.toDateString() === today.toDateString();
+        });
+        if (todayRecord && !todayRecord.checkOutTime) {
+          this.checkOutAt(latitude, longitude);
+          return;
+        }
+        if (!this.withinRadius) {
+          this.showOffsite = true;
+          this.loading = false;
+          return;
+        }
         this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
           latitude,
           longitude
@@ -85,9 +184,64 @@ export class AttendancePageComponent implements OnInit {
     );
   }
 
+  submitOffsite() {
+    if (!navigator.geolocation) return;
+    this.loading = true;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const latitude = pos.coords.latitude;
+      const longitude = pos.coords.longitude;
+      // Convert photo to base64
+      const reader = this.photoFile ? new FileReader() : null;
+      const send = (photoBase64?: string) => {
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
+          latitude, longitude, offsiteReason: this.offsiteReason, photoBase64
+        }).subscribe({
+          next: () => {
+            this.loading = false;
+            this.statusMessage = 'Off-site check-in submitted';
+            this.showOffsite = false;
+            this.offsiteReason = '';
+            this.photoFile = null;
+            this.loadAttendance();
+          },
+          error: (err) => {
+            this.loading = false;
+            this.statusMessage = err.error?.error || 'Off-site check-in failed';
+          }
+        });
+      };
+      if (reader && this.photoFile) {
+        reader.onload = () => send(String(reader.result));
+        reader.readAsDataURL(this.photoFile);
+      } else {
+        send();
+      }
+    });
+  }
+
+  onPhotoSelected(event: any) {
+    const file = event.target?.files?.[0];
+    if (file) this.photoFile = file;
+  }
+
   checkOut() {
+    // fallback without location
     this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, {}).subscribe({
       next: (res: any) => {
+        this.loading = false;
+        this.statusMessage = 'Checked out successfully!';
+        this.loadAttendance();
+      },
+      error: (err) => {
+        this.loading = false;
+        this.statusMessage = err.error?.error || 'Check-out failed';
+      }
+    });
+  }
+
+  checkOutAt(latitude: number, longitude: number) {
+    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, { latitude, longitude }).subscribe({
+      next: () => {
         this.loading = false;
         this.statusMessage = 'Checked out successfully!';
         this.loadAttendance();
