@@ -28,6 +28,9 @@ export class AttendancePageComponent implements OnInit {
   withinRadius = false;
   nearestLocationName = '';
   nearestDistanceMeters: number | null = null;
+  gpsRefreshing = false;
+  lastGpsFixAt: Date | null = null;
+  lastGpsAccuracyMeters: number | null = null;
   // Offsite modal
   showOffsite = false;
   // Map instance (Leaflet)
@@ -83,17 +86,44 @@ export class AttendancePageComponent implements OnInit {
 
   renderUserLocation() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const userIcon = L.divIcon({ className: 'custom-user', html: '<div style=\"background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)\"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
-      if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
-      this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
-      this.computeNearest(lat, lng);
-      const points: any[] = [[lat, lng], ...this.locations.map(l => [l.latitude, l.longitude])];
-      this.map.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
-      try { this.map.invalidateSize(); } catch {}
-    });
+    this.refreshGps(false);
+  }
+
+  refreshGps(showToast: boolean = true) {
+    if (!navigator.geolocation) {
+      if (showToast) this.toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+
+    if (!this.map) {
+      this.initMap();
+    }
+
+    this.gpsRefreshing = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        this.lastGpsFixAt = new Date();
+        this.lastGpsAccuracyMeters = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+
+        const userIcon = L.divIcon({ className: 'custom-user', html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
+        if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
+        this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
+
+        this.computeNearest(lat, lng);
+        try { this.map.panTo([lat, lng]); } catch {}
+        try { this.map.invalidateSize(); } catch {}
+
+        this.gpsRefreshing = false;
+        if (showToast) this.toast.success('GPS refreshed');
+      },
+      () => {
+        this.gpsRefreshing = false;
+        if (showToast) this.toast.error('Unable to refresh GPS. Please enable Location.');
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
   }
 
   computeNearest(lat: number, lng: number) {

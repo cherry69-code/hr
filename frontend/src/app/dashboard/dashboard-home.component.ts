@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-dashboard-home',
@@ -13,6 +14,7 @@ import { environment } from '../../environments/environment';
 export class DashboardHomeComponent implements OnInit {
   private http = inject(HttpClient);
   private authService = inject(AuthService);
+  private router = inject(Router);
 
   role = this.authService.getRole();
   stats: any = {};
@@ -31,5 +33,9 @@ export class DashboardHomeComponent implements OnInit {
       },
       error: () => this.loading = false
     });
+  }
+
+  openLeaves() {
+    this.router.navigate(['/leaves']);
   }
 }
