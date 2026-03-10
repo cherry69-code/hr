@@ -47,12 +47,14 @@ exports.applyLeave = asyncHandler(async (req, res, next) => {
 exports.getLeaves = asyncHandler(async (req, res, next) => {
   let query = {};
 
+  const isManager = req.user.role === 'manager' || ['N1', 'N2', 'N3', 'PnL'].includes(req.user.level);
+
   if (req.user.role === 'admin' || req.user.role === 'hr') {
     // Admin/HR see all
     if (req.query.employeeId) {
       query = { employeeId: req.query.employeeId };
     }
-  } else if (req.user.role === 'manager') {
+  } else if (isManager) {
     // PnL or Managers
     // Find all users in the Team (if PnL) OR recursive reportees
     
@@ -113,14 +115,14 @@ exports.updateLeaveStatus = asyncHandler(async (req, res, next) => {
   }
 
   // Check authorization
-  // PnL and Admin can always approve
-  const isSuperApprover = req.user.role === 'admin' || req.user.level === 'PnL';
+  // Admin, HR, and PnL can always approve
+  const isSuperApprover = req.user.role === 'admin' || req.user.role === 'hr' || req.user.level === 'PnL';
   
   if (isSuperApprover) {
     // Approved
   } else {
     // Other managers cannot approve leave as per new requirement
-    return res.status(401).json({ success: false, error: 'Only PnL or Admin can approve leaves' });
+    return res.status(401).json({ success: false, error: 'Only PnL, HR, or Admin can approve leaves' });
   }
 
   leave = await Leave.findByIdAndUpdate(req.params.id, {  

@@ -18,6 +18,13 @@ export class LeavePageComponent implements OnInit {
   private toast = inject(ToastService);
 
   role = this.authService.getRole();
+  level = this.authService.currentUserValue?.level;
+
+  get isManager() {
+    return this.role === 'admin' || this.role === 'hr' || this.role === 'manager' ||
+           ['N1', 'N2', 'N3', 'PnL'].includes(this.level);
+  }
+
   leaves: any[] = [];
   loading = false;
 

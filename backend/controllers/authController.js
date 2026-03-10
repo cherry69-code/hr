@@ -17,7 +17,7 @@ const setCookie = (res, name, value, opts = {}) => {
 
 const createAccessToken = (user) =>
   require('jsonwebtoken').sign(
-    { id: user._id, role: user.role, companyId: user.companyId || undefined },
+    { id: user._id, role: user.role, level: user.level, companyId: user.companyId || undefined },
     process.env.JWT_SECRET,
     { expiresIn: '15m' }
   );
@@ -62,17 +62,26 @@ exports.register = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Login user
+// @desc    Login user (Email or Employee Code)
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
-  const { email, password } = req.body;
+  const { email, password, employeeCode } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ success: false, error: 'Please provide email and password' });
+  if (!password) {
+    return res.status(400).json({ success: false, error: 'Please provide password' });
   }
 
-  const user = await User.findOne({ email }).select('+password');
+  // Determine login type: Employee Code or Email
+  let user = null;
+  
+  if (employeeCode) {
+    user = await User.findOne({ employeeId: employeeCode }).select('+password'); // Using employeeId as Employee Code
+  } else if (email) {
+    user = await User.findOne({ email }).select('+password');
+  } else {
+    return res.status(400).json({ success: false, error: 'Please provide Email or Employee Code' });
+  }
 
   if (!user) {
     return res.status(401).json({ success: false, error: 'Invalid credentials' });

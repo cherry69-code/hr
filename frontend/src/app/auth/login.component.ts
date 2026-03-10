@@ -15,7 +15,7 @@ export class LoginComponent {
   private router = inject(Router);
 
   credentials = {
-    email: '',
+    loginId: '', // Can be email or employee code
     password: ''
   };
 
@@ -32,7 +32,18 @@ export class LoginComponent {
     this.loading = true;
     this.error = '';
 
-    this.authService.login(this.credentials).subscribe({
+    // Determine payload structure
+    const payload: any = { password: this.credentials.password };
+    const loginId = this.credentials.loginId.trim();
+
+    // Simple heuristic: if it contains '@', treat as email, else Employee Code
+    if (loginId.includes('@')) {
+        payload.email = loginId;
+    } else {
+        payload.employeeCode = loginId;
+    }
+
+    this.authService.login(payload).subscribe({
       next: (res) => {
         const role = this.authService.getRole();
         if (role === 'employee') {

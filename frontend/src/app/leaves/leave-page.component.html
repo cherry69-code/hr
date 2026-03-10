@@ -78,7 +78,7 @@
   </div>
 
   <!-- Team Leaves (For Managers/Admin) -->
-  <div *ngIf="role !== 'employee'" class="bg-white p-6 rounded-2xl shadow overflow-x-auto">
+  <div *ngIf="isManager" class="bg-white p-6 rounded-2xl shadow overflow-x-auto">
     <h2 class="text-lg font-bold text-[#0F172A] mb-4">Team Requests</h2>
     <table class="w-full text-left">
       <thead class="bg-gray-50">

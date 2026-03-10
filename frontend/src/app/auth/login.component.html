@@ -6,8 +6,8 @@
 
     <form class="space-y-4" (ngSubmit)="onSubmit()">
       <div>
-        <input type="email" name="email" placeholder="Email"
-          [(ngModel)]="credentials.email" required
+        <input type="text" name="loginId" placeholder="Email or Employee Code"
+          [(ngModel)]="credentials.loginId" required
           class="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-600 outline-none">
       </div>
 
