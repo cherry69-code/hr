@@ -20,8 +20,12 @@ export class LeavePageComponent implements OnInit {
   role = this.authService.getRole();
   level = this.authService.currentUserValue?.level;
 
+  get isAdmin() {
+    return this.role === 'admin';
+  }
+
   get isManager() {
-    return this.role === 'admin' || this.role === 'hr' || this.role === 'manager' ||
+    return this.role === 'hr' || this.role === 'manager' ||
            ['N1', 'N2', 'N3', 'PnL'].includes(this.level);
   }
 
@@ -58,11 +62,17 @@ export class LeavePageComponent implements OnInit {
   }
 
   get myLeaves() {
+    if (this.isAdmin) return [];
     return this.leaves.filter(l => l.employeeId._id === this.authService.currentUserValue.id);
   }
 
   get teamLeaves() {
+    if (this.isAdmin) return [];
     return this.leaves.filter(l => l.employeeId._id !== this.authService.currentUserValue.id);
+  }
+
+  get approvalLeaves() {
+    return this.leaves;
   }
 
   applyLeave() {

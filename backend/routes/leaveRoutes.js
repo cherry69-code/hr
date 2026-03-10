@@ -8,6 +8,6 @@ router.use(protect);
 
 router.post('/', applyLeave);
 router.get('/', getLeaves);
-router.put('/:id', authorize('admin', 'hr', 'manager'), updateLeaveStatus);
+router.put('/:id', authorize('admin'), updateLeaveStatus);
 
 module.exports = router;

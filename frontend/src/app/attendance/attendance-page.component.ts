@@ -160,14 +160,23 @@ export class AttendancePageComponent implements OnInit {
     }
 
     this.loading = true;
+
+    // Explicitly check for active session
     const todayRecord = this.attendanceRecords.find(r => {
       const d = new Date(r.date);
       const today = new Date();
       return d.toDateString() === today.toDateString();
     });
 
+    // If already checked in and not checked out, this button should act as Check In (which is invalid state, or maybe multiple checkins?)
+    // But wait, the UI has separate buttons for Check In and Check Out.
+    // If the user clicks "Check In", we should NOT auto-checkout.
+
+    // Logic fix: If todayRecord exists and has NO checkOutTime, it means they are currently checked in.
+    // Clicking "Check In" again is redundant or an error.
     if (todayRecord && !todayRecord.checkOutTime) {
-      this.checkOut();
+      this.loading = false;
+      this.statusMessage = 'You are already checked in.';
       return;
     }
 
@@ -175,22 +184,15 @@ export class AttendancePageComponent implements OnInit {
       (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
-        // If outside radius -> show offsite popup
+
         this.computeNearest(latitude, longitude);
-        const todayRecord = this.attendanceRecords.find(r => {
-          const d = new Date(r.date);
-          const today = new Date();
-          return d.toDateString() === today.toDateString();
-        });
-        if (todayRecord && !todayRecord.checkOutTime) {
-          this.checkOutAt(latitude, longitude);
-          return;
-        }
+
         if (!this.withinRadius) {
           this.loading = false;
           this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
           return;
         }
+
         this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, { latitude, longitude }).subscribe({
           next: (res: any) => {
             this.loading = false;

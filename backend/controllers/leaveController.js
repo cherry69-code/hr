@@ -114,15 +114,8 @@ exports.updateLeaveStatus = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'Leave request not found' });
   }
 
-  // Check authorization
-  // Admin, HR, and PnL can always approve
-  const isSuperApprover = req.user.role === 'admin' || req.user.role === 'hr' || req.user.level === 'PnL';
-  
-  if (isSuperApprover) {
-    // Approved
-  } else {
-    // Other managers cannot approve leave as per new requirement
-    return res.status(401).json({ success: false, error: 'Only PnL, HR, or Admin can approve leaves' });
+  if (req.user.role !== 'admin') {
+    return res.status(401).json({ success: false, error: 'Only Admin can approve leaves' });
   }
 
   leave = await Leave.findByIdAndUpdate(req.params.id, {  
