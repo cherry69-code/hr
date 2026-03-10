@@ -33,14 +33,20 @@
 
     <!-- Sticky button area -->
     <div class="sticky bottom-4 flex flex-col gap-3">
-      <button (click)="markAttendance()" [disabled]="loading"
+      <!-- Check In Button -->
+      <button (click)="markAttendance()"
+        [disabled]="loading || todayRecord"
         class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
-        [ngClass]="withinRadius ? 'bg-[#16A34A] text-white hover:bg-[#15803d]' : 'bg-yellow-500 text-black hover:bg-yellow-600'">
-        {{ withinRadius ? (loading ? 'Processing...' : 'Check In') : 'Out of Range' }}
+        [ngClass]="todayRecord ? 'bg-gray-400 text-white cursor-not-allowed' : (withinRadius ? 'bg-[#16A34A] text-white hover:bg-[#15803d]' : 'bg-yellow-500 text-black hover:bg-yellow-600')">
+        {{ todayRecord ? 'Checked In' : (withinRadius ? (loading ? 'Processing...' : 'Check In') : 'Out of Range') }}
       </button>
-      <button (click)="checkOut()" [disabled]="loading"
-        class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50">
-        Check Out
+
+      <!-- Check Out Button (Enabled if checked in, allows updating) -->
+      <button (click)="checkOut()"
+        [disabled]="loading || !todayRecord"
+        class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50"
+        [ngClass]="!todayRecord ? 'opacity-50 cursor-not-allowed' : ''">
+        {{ todayRecord?.checkOutTime ? 'Update Check Out' : 'Check Out' }}
       </button>
     </div>
 

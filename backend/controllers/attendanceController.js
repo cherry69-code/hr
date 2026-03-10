@@ -29,6 +29,18 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'Employee not found' });
   }
 
+  // Check if already checked in today (One Punch-In Policy)
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const existingAttendance = await Attendance.findOne({
+    employeeId,
+    date: { $gte: startOfDay }
+  });
+
+  if (existingAttendance) {
+    return res.status(400).json({ success: false, error: 'You have already checked in today.' });
+  }
+
   // 2. Validate against configured locations
   const locations = await Location.find({ active: true })
     .select('latitude longitude name radius')
@@ -152,16 +164,17 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Find attendance for today (even if already checked out)
   const attendance = await Attendance.findOne({
     employeeId,
-    date: { $gte: today },
-    checkOutTime: { $exists: false }
+    date: { $gte: today }
   });
 
   if (!attendance) {
     return res.status(404).json({ success: false, error: 'No active check-in found for today' });
   }
 
+  // Always update to the LATEST check-out time
   const checkOutTime = new Date();
   attendance.checkOutTime = checkOutTime;
   if (latitude && longitude) {
@@ -183,9 +196,22 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
 
   // If already Half Day (due to late login), keep it.
   // Else if logout is early (< 7 PM), mark as Half Day.
-  if (attendance.status !== 'Half Day' && attendance.status !== 'Weekly Off Work') {
-    if (checkOutTime < logoutThreshold) {
+  // BUT: If they update check-out and it's now > 7 PM, should we revert to Present?
+  // Yes, recalculate status if it was only Half Day due to early logout.
+  // If it was Half Day due to late login, it stays Half Day.
+
+  const loginThreshold = new Date(attendance.date);
+  loginThreshold.setHours(10, 0, 0, 0);
+  const isLateLogin = new Date(attendance.checkInTime) > loginThreshold;
+
+  if (attendance.status !== 'Weekly Off Work') {
+    if (isLateLogin) {
       attendance.status = 'Half Day';
+    } else if (checkOutTime < logoutThreshold) {
+      attendance.status = 'Half Day';
+    } else {
+      // Login on time AND Logout on time
+      attendance.status = 'Present';
     }
   }
 

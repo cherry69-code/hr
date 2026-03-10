@@ -153,32 +153,26 @@ export class AttendancePageComponent implements OnInit {
     return R * c;
   }
 
+  get todayRecord() {
+    return this.attendanceRecords.find(r => {
+      const d = new Date(r.date);
+      const today = new Date();
+      return d.toDateString() === today.toDateString();
+    });
+  }
+
   markAttendance() {
     if (!navigator.geolocation) {
       this.statusMessage = 'Geolocation is not supported by your browser';
       return;
     }
 
-    this.loading = true;
-
-    // Explicitly check for active session
-    const todayRecord = this.attendanceRecords.find(r => {
-      const d = new Date(r.date);
-      const today = new Date();
-      return d.toDateString() === today.toDateString();
-    });
-
-    // If already checked in and not checked out, this button should act as Check In (which is invalid state, or maybe multiple checkins?)
-    // But wait, the UI has separate buttons for Check In and Check Out.
-    // If the user clicks "Check In", we should NOT auto-checkout.
-
-    // Logic fix: If todayRecord exists and has NO checkOutTime, it means they are currently checked in.
-    // Clicking "Check In" again is redundant or an error.
-    if (todayRecord && !todayRecord.checkOutTime) {
-      this.loading = false;
-      this.statusMessage = 'You are already checked in.';
+    if (this.todayRecord) {
+      this.statusMessage = 'You have already checked in today.';
       return;
     }
+
+    this.loading = true;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {

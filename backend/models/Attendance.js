@@ -38,6 +38,15 @@ const AttendanceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  source: {
+    type: String,
+    enum: ['BIOMETRIC', 'MOBILE_GPS', 'MANUAL_ADMIN'],
+    default: 'MOBILE_GPS'
+  },
+  deviceId: {
+    type: String, // Biometric Device ID
+    trim: true
+  },
   status: {
     type: String,
     enum: ['Present', 'Absent', 'Half Day', 'Late', 'LOP', 'Weekly Off Work'],
