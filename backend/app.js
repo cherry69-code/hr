@@ -109,6 +109,7 @@ const vault = require('./routes/vaultRoutes');
 const geocode = require('./routes/geocodeRoutes');
 const incentives = require('./routes/incentiveRoutes');
 const biometric = require('./routes/biometricRoutes');
+const fieldAttendance = require('./routes/fieldAttendanceRoutes');
 const errorHandler = require('./middlewares/errorMiddleware');
 
 app.use('/api/auth', auth);
@@ -129,6 +130,7 @@ app.use('/api/vault', vault);
 app.use('/api/geocode', geocode);
 app.use('/api/incentives', incentives);
 app.use('/api/biometric', biometric);
+app.use('/api/field-attendance', fieldAttendance);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

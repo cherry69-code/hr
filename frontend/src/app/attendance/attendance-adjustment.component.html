@@ -9,9 +9,9 @@
     <h2 class="text-lg font-semibold mb-4 text-gray-800">
       {{ isAdmin ? 'Override Attendance' : 'Request Correction' }}
     </h2>
-    
+
     <div class="grid md:grid-cols-4 gap-4 items-end">
-      
+
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Employee</label>
         <select [(ngModel)]="form.employeeId" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
@@ -24,7 +24,7 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Date</label>
-        <input type="date" [(ngModel)]="form.date" 
+        <input type="date" [(ngModel)]="form.date"
                class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
       </div>
 
@@ -40,14 +40,14 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-        <input type="text" [(ngModel)]="form.reason" placeholder="e.g. System Error / Leave" 
+        <input type="text" [(ngModel)]="form.reason" placeholder="e.g. System Error / Leave"
                class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
       </div>
 
     </div>
 
     <div class="mt-4 flex justify-end">
-      <button (click)="submitRequest()" [disabled]="loading" 
+      <button (click)="submitRequest()" [disabled]="loading"
               class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50">
         {{ loading ? 'Processing...' : (isAdmin ? 'Update Attendance' : 'Submit Request') }}
       </button>
@@ -107,11 +107,11 @@
             </td>
             <td class="p-4 text-right" *ngIf="isAdmin">
               <div *ngIf="req.status === 'Pending'" class="flex justify-end space-x-2">
-                <button (click)="approve(req)" 
+                <button (click)="approve(req)"
                         class="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded text-xs transition-colors">
                   Approve
                 </button>
-                <button (click)="reject(req)" 
+                <button (click)="reject(req)"
                         class="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded text-xs transition-colors">
                   Reject
                 </button>
@@ -124,6 +124,68 @@
           <tr *ngIf="requests.length === 0">
             <td colspan="8" class="p-8 text-center text-gray-400">
               No correction requests found.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bg-white p-6 rounded-2xl shadow mt-8">
+    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-800">Field Attendance (Sat/Sun)</h2>
+        <p class="text-xs text-gray-500 mt-1">Face + GPS punches with map links</p>
+      </div>
+      <div class="flex items-end gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+          <input type="date" [(ngModel)]="fieldLogDate" (change)="loadFieldLogs()"
+                 class="p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+        </div>
+        <button (click)="loadFieldLogs()"
+                class="bg-[#0F172A] hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm text-gray-600">
+        <thead class="bg-gray-50 uppercase font-medium text-gray-500">
+          <tr>
+            <th class="p-4">Employee</th>
+            <th class="p-4">Type</th>
+            <th class="p-4">Time</th>
+            <th class="p-4">Accuracy</th>
+            <th class="p-4">Location</th>
+            <th class="p-4">Map</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <tr *ngFor="let log of fieldLogs" class="hover:bg-gray-50">
+            <td class="p-4 font-medium text-gray-900">
+              {{ log.employeeId?.fullName || '-' }}
+              <div class="text-xs text-gray-400">{{ log.employeeCode }}</div>
+            </td>
+            <td class="p-4">{{ log.checkType }}</td>
+            <td class="p-4">{{ log.punchTime | date:'short' }}</td>
+            <td class="p-4">{{ log.gpsAccuracyMeters ? (log.gpsAccuracyMeters + 'm') : '-' }}</td>
+            <td class="p-4">
+              <div class="max-w-[320px] truncate" [title]="log.locationAddress || ''">
+                {{ log.locationAddress || (log.latitude + ', ' + log.longitude) }}
+              </div>
+            </td>
+            <td class="p-4">
+              <a *ngIf="log.mapUrl" [href]="log.mapUrl" target="_blank" class="text-blue-600 hover:text-blue-800 font-medium">
+                View on Map
+              </a>
+              <span *ngIf="!log.mapUrl" class="text-gray-400">-</span>
+            </td>
+          </tr>
+          <tr *ngIf="fieldLogs.length === 0">
+            <td colspan="6" class="p-8 text-center text-gray-400">
+              No field attendance logs found.
             </td>
           </tr>
         </tbody>

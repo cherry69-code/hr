@@ -22,7 +22,7 @@ export class AttendanceAdjustmentComponent implements OnInit {
   currentUser = this.authService.currentUserValue;
   employees: any[] = [];
   requests: any[] = [];
-  
+
   // Form Data
   form = {
     employeeId: '',
@@ -32,6 +32,8 @@ export class AttendanceAdjustmentComponent implements OnInit {
   };
 
   loading = false;
+  fieldLogDate = new Date().toISOString().slice(0, 10);
+  fieldLogs: any[] = [];
 
   get isAdmin() {
     return this.currentUser?.role === 'admin';
@@ -40,6 +42,7 @@ export class AttendanceAdjustmentComponent implements OnInit {
   ngOnInit() {
     this.loadEmployees();
     this.loadRequests();
+    this.loadFieldLogs();
   }
 
   loadEmployees() {
@@ -53,6 +56,13 @@ export class AttendanceAdjustmentComponent implements OnInit {
     this.attendanceService.getCorrectionRequests().subscribe({
       next: (res: any) => this.requests = res.data || [],
       error: () => this.toast.error('Failed to load correction requests')
+    });
+  }
+
+  loadFieldLogs() {
+    this.http.get(`${environment.apiUrl}/field-attendance/logs?date=${this.fieldLogDate}`).subscribe({
+      next: (res: any) => this.fieldLogs = res.data || [],
+      error: () => {}
     });
   }
 

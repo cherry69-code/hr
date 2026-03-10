@@ -142,6 +142,8 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
         // Check Half-Day Logic for Checkout (Early Exit)
         const logoutThreshold = new Date(startOfDay);
         logoutThreshold.setHours(19, 0, 0, 0); // 7 PM
+        const loginThreshold = new Date(startOfDay);
+        loginThreshold.setHours(10, 0, 0, 0);
         
         // Only downgrade to Half Day if not already Weekly Off
         if (attendance.status !== 'Weekly Off Work') {

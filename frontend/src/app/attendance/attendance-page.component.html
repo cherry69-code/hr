@@ -31,9 +31,16 @@
       </div>
     </div>
 
+    <div class="mb-4" *ngIf="isFieldMode">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Project / Location</label>
+      <input [(ngModel)]="fieldLocationAddress" type="text" placeholder="e.g. Bhartiya City"
+        class="w-full border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#16A34A]" />
+    </div>
+
+    <input #fieldSelfieInput type="file" accept="image/*" capture="user" class="hidden" (change)="onFieldSelfieSelected($event)" />
+
     <!-- Sticky button area -->
-    <div class="sticky bottom-4 flex flex-col gap-3">
-      <!-- Check In Button -->
+    <div class="sticky bottom-4 flex flex-col gap-3" *ngIf="!isFieldMode">
       <button (click)="markAttendance()"
         [disabled]="loading || todayRecord"
         class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
@@ -41,12 +48,25 @@
         {{ todayRecord ? 'Checked In' : (withinRadius ? (loading ? 'Processing...' : 'Check In') : 'Out of Range') }}
       </button>
 
-      <!-- Check Out Button (Enabled if checked in, allows updating) -->
       <button (click)="checkOut()"
         [disabled]="loading || !todayRecord"
         class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50"
         [ngClass]="!todayRecord ? 'opacity-50 cursor-not-allowed' : ''">
         {{ todayRecord?.checkOutTime ? 'Update Check Out' : 'Check Out' }}
+      </button>
+    </div>
+
+    <div class="sticky bottom-4 flex flex-col gap-3" *ngIf="isFieldMode">
+      <button (click)="onPickFieldSelfie('CHECK_IN', fieldSelfieInput)" [disabled]="loading || todayRecord"
+        class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
+        [ngClass]="todayRecord ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-[#16A34A] text-white hover:bg-[#15803d]'">
+        {{ todayRecord ? 'Checked In' : (loading ? 'Processing...' : 'On-Field Check-In') }}
+      </button>
+
+      <button (click)="onPickFieldSelfie('CHECK_OUT', fieldSelfieInput)" [disabled]="loading || !todayRecord"
+        class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50"
+        [ngClass]="!todayRecord ? 'opacity-50 cursor-not-allowed' : ''">
+        {{ todayRecord?.checkOutTime ? (loading ? 'Processing...' : 'Update Check Out') : (loading ? 'Processing...' : 'On-Field Check-Out') }}
       </button>
     </div>
 
