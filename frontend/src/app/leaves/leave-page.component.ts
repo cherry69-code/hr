@@ -72,7 +72,11 @@ export class LeavePageComponent implements OnInit {
   }
 
   get approvalLeaves() {
-    return this.leaves;
+    // If we're getting duplicates from backend, filter them out client side for safety
+    // Use a Map to keep unique by _id
+    const unique = new Map();
+    this.leaves.forEach(l => unique.set(l._id, l));
+    return Array.from(unique.values());
   }
 
   applyLeave() {

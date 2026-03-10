@@ -7,7 +7,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const asyncHandler = require('../middlewares/asyncHandler');
-const sendEmail = require('../utils/sendEmail');
+const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
 const { getCompanyLogoBuffer } = require('../utils/branding');
 const { generateOfferLetterPdf, generateJoiningAgreementPdf, generateDocumentHtml } = require('../services/documentGenerator.service');
 
@@ -479,7 +479,10 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   // 3. Create or Update User
   const update = {};
   if (fullName) update.fullName = fullName;
-  if (email) update.email = email;
+  if (email) {
+      update.email = email;
+      update.personalEmail = email; // Candidates use personal email initially
+  }
   if (address) update.address = address;
   if (designation) update.designation = designation;
   if (joiningDate) update.joiningDate = joiningDate;
@@ -497,6 +500,7 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
     user = await User.create({
       fullName,
       email,
+      personalEmail: email, // Set personal email for new candidates
       password: randomPassword,
       role: 'employee',
       level: 'N0',
@@ -591,24 +595,22 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   let emailError = '';
   
   try {
-    await sendEmail({
-      email: employee.email,
+    await sendCategorizedEmail(employee, EmailType.LEGAL, {
       subject: 'FINAL OFFER LETTER FROM PRONINJA CONSULTING PRIVATE LIMITED',
       message: `Please review and sign your offer letter here: ${signingLink}`,
       html: `
         <p>Dear ${employee.fullName},</p>
-        <p>Please find attached your offer letter.</p>
-        <p>You are required to digitally sign it using the link below.</p>
-        <p><a href="${signingLink}" style="background-color: #16A34A; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign Offer Letter</a></p>
-        ${pdfUrl ? `<p>You can also download the PDF copy here: <a href="${pdfUrl}">${pdfUrl}</a></p>` : ''}
-        <p>Regards,<br/>Team HR</p>
+        <p>Congratulations! We are pleased to offer you the position of ${employee.designation} at PropNinja.</p>
+        <p>Please review and sign your offer letter by clicking the link below:</p>
+        <p><a href="${signingLink}" style="background: #16A34A; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign Offer Letter</a></p>
+        <p>If the button doesn't work, copy this link: ${signingLink}</p>
+        <p>Regards,<br>HR Team</p>
       `
     });
     emailSent = true;
-  } catch (e) {
-    emailSent = false;
-    emailError = e && e.message ? e.message : 'Email could not be sent';
-    console.error('Email Send Error:', e);
+  } catch (err) {
+    console.error('Email Send Error:', err);
+    emailError = err.message;
   }
 
   if (!emailSent) {

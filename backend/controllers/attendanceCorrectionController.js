@@ -4,6 +4,7 @@ const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const PayrollAttendanceSummary = require('../models/PayrollAttendanceSummary');
 const asyncHandler = require('../middlewares/asyncHandler');
+const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
 
 // Helper to recalculate payroll summary
 const recalculatePayrollSummary = async (employeeId, date) => {
@@ -180,7 +181,7 @@ exports.getCorrectionRequests = asyncHandler(async (req, res, next) => {
 exports.updateCorrectionStatus = asyncHandler(async (req, res, next) => {
   const { status, adminComment } = req.body; // status: 'Approved' or 'Rejected'
   
-  const correction = await AttendanceCorrection.findById(req.params.id);
+  const correction = await AttendanceCorrection.findById(req.params.id).populate('employeeId');
   if (!correction) {
     return res.status(404).json({ success: false, error: 'Request not found' });
   }
@@ -230,8 +231,26 @@ exports.updateCorrectionStatus = asyncHandler(async (req, res, next) => {
       documentId: correction._id,
       action: `attendance_correction_${status.toLowerCase()}`,
       performedBy: String(req.user._id),
-      meta: { employeeId: correction.employeeId, status }
+      meta: { employeeId: correction.employeeId._id, status }
   });
+
+  // Notify Employee (Operational)
+  try {
+    const employee = correction.employeeId;
+    await sendCategorizedEmail(employee, EmailType.OPERATIONAL, {
+      subject: `Attendance Correction ${status}`,
+      text: `Your attendance correction request for ${new Date(correction.date).toDateString()} has been ${status}. ${adminComment ? 'Comment: ' + adminComment : ''}`,
+      html: `
+        <p>Dear ${employee.fullName},</p>
+        <p>Your attendance correction request for <b>${new Date(correction.date).toDateString()}</b> has been <b>${status.toUpperCase()}</b>.</p>
+        ${adminComment ? `<p>Admin Comment: ${adminComment}</p>` : ''}
+        <p>Please check your attendance dashboard for details.</p>
+        <p>Regards,<br>HR Team</p>
+      `
+    });
+  } catch (err) {
+    console.error('Failed to send attendance correction email:', err);
+  }
 
   res.status(200).json({ success: true, data: correction });
 });

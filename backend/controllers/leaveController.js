@@ -1,7 +1,7 @@
 const Leave = require('../models/Leave');
 const User = require('../models/User');
 const asyncHandler = require('../middlewares/asyncHandler');
-const sendEmail = require('../utils/sendEmail');
+const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
 
 // @desc    Apply for leave
 // @route   POST /api/leaves
@@ -27,8 +27,7 @@ exports.applyLeave = asyncHandler(async (req, res, next) => {
       <p>Please login to approve/reject.</p>
     `;
     try {
-      await sendEmail({
-        to: manager.email,
+      await sendCategorizedEmail(manager, EmailType.OPERATIONAL, {
         subject: `Leave Request - ${employee.fullName}`,
         html,
         text: `Leave Request from ${employee.fullName}`
@@ -137,8 +136,7 @@ exports.updateLeaveStatus = asyncHandler(async (req, res, next) => {
   `;
 
   try {
-    await sendEmail({
-      to: applicant.email,
+    await sendCategorizedEmail(applicant, EmailType.OPERATIONAL, {
       subject: `Leave Request ${leave.status.toUpperCase()}`,
       html,
       text: `Your leave request has been ${leave.status}`
