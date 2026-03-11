@@ -14,6 +14,7 @@ const connectDB = require('./config/db');
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 
 // CORS Configuration (Must be first)
 const corsOriginsRaw = process.env.CORS_ORIGINS || [
@@ -44,6 +45,17 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+if (String(process.env.NODE_ENV).toLowerCase() === 'production') {
+  app.use((req, res, next) => {
+    const proto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+    const isSecure = req.secure || proto === 'https';
+    if (isSecure) return next();
+    const host = req.headers.host;
+    if (!host) return next();
+    return res.redirect(301, `https://${host}${req.originalUrl}`);
+  });
+}
+
 // Ensure CORS headers are present even on 404/errors and for any preflight
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -66,6 +78,8 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
+
+app.use(require('./middlewares/systemAuditMiddleware'));
 
 // Dev logging middleware
 if (process.env.NODE_ENV === 'development') {

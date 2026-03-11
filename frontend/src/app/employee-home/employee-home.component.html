@@ -3,7 +3,7 @@
   <!-- Header Section -->
   <header class="flex justify-between items-center mb-8">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Good Morning, {{ user?.name || 'Employee' }}! 👋</h1>
+      <h1 class="text-2xl font-bold text-gray-900">Good Morning, {{ user?.fullName || 'Employee' }}! 👋</h1>
       <p class="text-sm text-gray-500 mt-1">{{ currentDate | date:'fullDate' }}</p>
     </div>
     <div class="flex items-center gap-4">
@@ -17,7 +17,7 @@
         {{ loading ? statusMessage : (isCheckedOut ? 'Home' : (isCheckedIn ? 'Punch Out' : 'Punch In')) }}
       </button>
       <div class="relative group">
-        <img [src]="user?.profilePicture || 'https://ui-avatars.com/api/?name=' + (user?.name || 'User') + '&background=random'" alt="User" class="w-10 h-10 rounded-full border-2 border-white shadow-md cursor-pointer">
+        <img [src]="user?.profilePicture || 'https://ui-avatars.com/api/?name=' + (user?.fullName || 'User') + '&background=random'" alt="User" class="w-10 h-10 rounded-full border-2 border-white shadow-md cursor-pointer">
         <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl py-2 hidden group-hover:block z-50">
           <a routerLink="/profile" class="block px-4 py-2 hover:bg-gray-100 text-sm">Profile</a>
           <button (click)="logout()" class="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-red-600">Logout</button>

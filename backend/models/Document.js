@@ -15,6 +15,14 @@ const DocumentSchema = new mongoose.Schema({
     type: String,
     // url is required for uploaded documents, but not for initial esign drafts
   },
+  storage: {
+    provider: { type: String, enum: ['cloudinary'], default: 'cloudinary' },
+    publicId: { type: String },
+    resourceType: { type: String },
+    format: { type: String },
+    deliveryType: { type: String },
+    version: { type: Number }
+  },
   // --- E-Sign Fields ---
   companyId: {
     type: mongoose.Schema.ObjectId,
@@ -47,5 +55,6 @@ const DocumentSchema = new mongoose.Schema({
 
 // Add indexes for performance
 DocumentSchema.index({ employeeId: 1, type: 1 });
+DocumentSchema.index({ 'storage.publicId': 1 });
 
 module.exports = mongoose.model('Document', DocumentSchema);

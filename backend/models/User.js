@@ -39,6 +39,13 @@ const UserSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  loginAttempts: {
+    type: Number,
+    default: 0
+  },
+  lockUntil: {
+    type: Date
+  },
   password: {
     type: String,
     required: [true, 'Please add a password'],
@@ -91,14 +98,14 @@ const UserSchema = new mongoose.Schema({
     ifscCode: String
   },
   salary: {
-    ctc: { type: Number, default: 0 },
-    basic: { type: Number, default: 0 },
-    hra: { type: Number, default: 0 },
-    specialAllowance: { type: Number, default: 0 },
-    pfPercentage: { type: Number, default: 12 },
-    esiPercentage: { type: Number, default: 0.75 },
-    professionalTax: { type: Number, default: 200 },
-    incomeTaxPercentage: { type: Number, default: 0 }
+    ctc: { type: String, default: '0' },
+    basic: { type: String, default: '0' },
+    hra: { type: String, default: '0' },
+    specialAllowance: { type: String, default: '0' },
+    pfPercentage: { type: String, default: '12' },
+    esiPercentage: { type: String, default: '0.75' },
+    professionalTax: { type: String, default: '200' },
+    incomeTaxPercentage: { type: String, default: '0' }
   },
   geofence: {
     latitude: Number,
@@ -118,15 +125,15 @@ const UserSchema = new mongoose.Schema({
     maritalStatus: String
   },
   documents: {
-    aadhar: { url: String, uploadedAt: Date },
-    pan: { url: String, uploadedAt: Date },
-    bankPassbook: { url: String, uploadedAt: Date },
-    addressProof: { url: String, uploadedAt: Date },
-    offerLetter: { url: String, signed: Boolean, uploadedAt: Date },
-    joiningLetter: { url: String, signed: Boolean, uploadedAt: Date },
-    joiningAgreement: { url: String, signed: Boolean, uploadedAt: Date },
-    degreeCertificate: { url: String, uploadedAt: Date },
-    photo: { url: String, uploadedAt: Date }
+    aadhar: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    pan: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    bankPassbook: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    addressProof: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    offerLetter: { url: String, signed: Boolean, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    joiningLetter: { url: String, signed: Boolean, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    joiningAgreement: { url: String, signed: Boolean, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    degreeCertificate: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number },
+    photo: { url: String, uploadedAt: Date, publicId: String, resourceType: String, format: String, deliveryType: String, version: Number }
   },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
@@ -144,6 +151,33 @@ const UserSchema = new mongoose.Schema({
 
 // Encrypt password using bcrypt
 UserSchema.pre('save', async function (next) {
+  try {
+    const { encryptField } = require('../utils/fieldCrypto');
+    const encIfPlain = (v) => {
+      if (v === undefined || v === null || v === '') return v;
+      if (typeof v === 'string' && v.startsWith('enc:')) return v;
+      return encryptField(v);
+    };
+
+    if (this.personalDetails) {
+      if (this.personalDetails.panNumber) this.personalDetails.panNumber = encIfPlain(this.personalDetails.panNumber);
+      if (this.personalDetails.aadharNumber) this.personalDetails.aadharNumber = encIfPlain(this.personalDetails.aadharNumber);
+    }
+    if (this.bankDetails) {
+      if (this.bankDetails.accountNumber) this.bankDetails.accountNumber = encIfPlain(this.bankDetails.accountNumber);
+      if (this.bankDetails.ifscCode) this.bankDetails.ifscCode = encIfPlain(this.bankDetails.ifscCode);
+      if (this.bankDetails.bankName) this.bankDetails.bankName = encIfPlain(this.bankDetails.bankName);
+    }
+    if (this.salary) {
+      const keys = ['ctc', 'basic', 'hra', 'specialAllowance', 'pfPercentage', 'esiPercentage', 'professionalTax', 'incomeTaxPercentage'];
+      for (const k of keys) {
+        const v = this.salary[k];
+        if (v === undefined || v === null || v === '') continue;
+        this.salary[k] = encIfPlain(v);
+      }
+    }
+  } catch {}
+
   if (this.isModified('password')) {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);

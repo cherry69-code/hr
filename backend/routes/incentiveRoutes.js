@@ -12,6 +12,7 @@ const {
   calculateMonthly,
   getCalculations,
   approveCalculation,
+  rejectCalculation,
   payQuarter,
   getMySummary
 } = require('../controllers/incentiveEngineController');
@@ -29,6 +30,7 @@ router.delete('/revenue/:id', authorize('admin', 'hr'), deleteRevenue);
 router.post('/calculate-monthly', authorize('admin', 'hr'), calculateMonthly);
 router.get('/calculations', authorize('admin', 'hr', 'manager', 'employee'), getCalculations);
 router.put('/calculations/:id/approve', authorize('admin', 'hr'), approveCalculation);
+router.put('/calculations/:id/reject', authorize('admin', 'hr'), rejectCalculation);
 router.post('/payout/quarter', authorize('admin', 'hr'), payQuarter);
 router.get('/my-summary-v2', getMySummary);
 

@@ -71,7 +71,13 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'Employee not found' });
   }
 
-  const effectiveCtc = Number(employee?.salary?.ctc ?? 0);
+  let effectiveCtc = 0;
+  try {
+    const { decryptField } = require('../utils/fieldCrypto');
+    effectiveCtc = Number(decryptField(employee?.salary?.ctc ?? 0) || 0);
+  } catch {
+    effectiveCtc = Number(employee?.salary?.ctc ?? 0);
+  }
 
   let payroll;
   try {

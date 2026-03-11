@@ -129,7 +129,38 @@ exports.createEmployee = asyncHandler(async (req, res, next) => {
 // @route   GET /api/employees/:id
 // @access  Private
 exports.getEmployee = asyncHandler(async (req, res, next) => {
-  const employee = await User.findById(req.params.id)
+  const requestedId = String(req.params.id || '');
+  const requesterId = String(req.user?._id || req.user?.id || '');
+
+  if (!requestedId) {
+    return res.status(400).json({ success: false, error: 'Employee ID is required' });
+  }
+
+  if (req.user.role === 'employee' && requesterId !== requestedId) {
+    return res.status(403).json({ success: false, error: 'Not authorized' });
+  }
+
+  if (req.user.role === 'manager' && requesterId !== requestedId) {
+    const reportees = await User.aggregate([
+      { $match: { _id: req.user._id } },
+      {
+        $graphLookup: {
+          from: 'users',
+          startWith: '$_id',
+          connectFromField: '_id',
+          connectToField: 'reportingManagerId',
+          as: 'desc'
+        }
+      },
+      { $project: { ids: { $concatArrays: [['$_id'], '$desc._id'] } } }
+    ]);
+    const allowed = new Set((reportees[0]?.ids || []).map((x) => String(x)));
+    if (!allowed.has(requestedId)) {
+      return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
+  }
+
+  const employee = await User.findById(requestedId)
     .populate('departmentId')
     .populate('reportingManagerId', 'fullName email')
     .populate('teamId', 'name description')
@@ -154,7 +185,39 @@ exports.getEmployee = asyncHandler(async (req, res, next) => {
   // For now, just the direct manager is populated.
   // If we want a chain, we'd need recursive lookup, but UI usually shows direct manager.
 
-  res.status(200).json({ success: true, data: { ...employee, teamMembers } });
+  const data = { ...employee, teamMembers };
+  if (!['admin', 'hr'].includes(req.user.role)) {
+    if (data.salary) delete data.salary;
+    if (data.bankDetails) delete data.bankDetails;
+    if (data.personalDetails) {
+      const pd = { ...data.personalDetails };
+      if (pd.panNumber) pd.panNumber = '************';
+      if (pd.aadharNumber) pd.aadharNumber = '************';
+      data.personalDetails = pd;
+    }
+  } else {
+    try {
+      const { decryptField } = require('../utils/fieldCrypto');
+      if (data.personalDetails) {
+        if (data.personalDetails.panNumber) data.personalDetails.panNumber = decryptField(data.personalDetails.panNumber);
+        if (data.personalDetails.aadharNumber) data.personalDetails.aadharNumber = decryptField(data.personalDetails.aadharNumber);
+      }
+      if (data.bankDetails) {
+        if (data.bankDetails.accountNumber) data.bankDetails.accountNumber = decryptField(data.bankDetails.accountNumber);
+        if (data.bankDetails.ifscCode) data.bankDetails.ifscCode = decryptField(data.bankDetails.ifscCode);
+        if (data.bankDetails.bankName) data.bankDetails.bankName = decryptField(data.bankDetails.bankName);
+      }
+      if (data.salary) {
+        const s = { ...data.salary };
+        Object.keys(s).forEach((k) => {
+          if (s[k]) s[k] = Number(decryptField(s[k]) || 0);
+        });
+        data.salary = s;
+      }
+    } catch {}
+  }
+
+  res.status(200).json({ success: true, data });
 });
 
 // @desc    Update employee

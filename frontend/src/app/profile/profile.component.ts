@@ -29,6 +29,7 @@ export class ProfileComponent implements OnInit {
   canEdit = false;
   currentUploadDocType = '';
   uploadingProfileImage = false;
+  documentsIndex: any = {};
 
   // New fields for HR update
   editForm: any = {
@@ -62,8 +63,42 @@ export class ProfileComponent implements OnInit {
         this.initEditForm();
         this.loading = false;
         this.loadLeaderboardStats();
+        this.loadDocuments();
       },
       error: () => this.loading = false
+    });
+  }
+
+  loadDocuments() {
+    if (!this.user?._id) return;
+    this.http.get(`${environment.apiUrl}/documents/${this.user._id}`).subscribe({
+      next: (res: any) => {
+        const docs = res.data || [];
+        const idx: any = {};
+        for (const d of docs) {
+          if (d && d.type) idx[String(d.type)] = d;
+        }
+        this.documentsIndex = idx;
+      },
+      error: () => {
+        this.documentsIndex = {};
+      }
+    });
+  }
+
+  openDocumentByType(type: string) {
+    const doc = this.documentsIndex?.[type];
+    if (!doc?._id) {
+      this.toast.error('Document not available');
+      return;
+    }
+    this.http.get(`${environment.apiUrl}/documents/signed-url/${doc._id}`).subscribe({
+      next: (res: any) => {
+        const url = res.data?.url;
+        if (url) window.open(url, '_blank');
+        else this.toast.error('Download link not available');
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Failed to open document')
     });
   }
 

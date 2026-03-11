@@ -231,18 +231,27 @@ exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
     writeStream.on('error', reject);
   });
 
-  // 3. Upload to Cloudinary
+  // 3. Upload to Cloudinary (Private)
   const result = await cloudinary.uploader.upload(filePath, {
     resource_type: 'raw',
     folder: 'documents',
-    public_id: fileName
+    public_id: fileName,
+    type: 'private'
   });
 
   // 4. Save to DB
   const document = await Document.create({
     employeeId: employee._id,
     type,
-    url: result.secure_url,
+    url: '',
+    storage: {
+      provider: 'cloudinary',
+      publicId: result.public_id,
+      resourceType: result.resource_type,
+      format: result.format,
+      deliveryType: result.type,
+      version: result.version
+    },
     uploadedBy: req.user.id
   });
 
@@ -255,8 +264,13 @@ exports.generateAndUploadPDF = asyncHandler(async (req, res, next) => {
   if (type === 'joining_letter') schemaKey = 'joiningLetter';
 
   updateField[`documents.${schemaKey}`] = {
-    url: result.secure_url,
-    uploadedAt: Date.now()
+    url: '',
+    uploadedAt: Date.now(),
+    publicId: result.public_id,
+    resourceType: result.resource_type,
+    format: result.format,
+    deliveryType: result.type,
+    version: result.version
   };
 
   await User.findByIdAndUpdate(employeeId, { $set: updateField });
@@ -311,7 +325,8 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   try {
     result = await cloudinary.uploader.upload(file, {
       folder: 'documents',
-      resource_type: 'auto'
+      resource_type: 'auto',
+      type: 'private'
     });
   } catch (err) {
     console.error('Cloudinary Upload Failed:', err);
@@ -325,13 +340,39 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   
   // Ensure we update the nested field correctly
   updateField[`documents.${type}`] = {
-    url: result.secure_url,
-    uploadedAt: Date.now()
+    url: '',
+    uploadedAt: Date.now(),
+    publicId: result.public_id,
+    resourceType: result.resource_type,
+    format: result.format,
+    deliveryType: result.type,
+    version: result.version
   };
 
   const user = await User.findByIdAndUpdate(employeeId, {
     $set: updateField
   }, { new: true });
+
+  await Document.findOneAndUpdate(
+    { employeeId, type },
+    {
+      $set: {
+        employeeId,
+        type,
+        url: '',
+        storage: {
+          provider: 'cloudinary',
+          publicId: result.public_id,
+          resourceType: result.resource_type,
+          format: result.format,
+          deliveryType: result.type,
+          version: result.version
+        },
+        uploadedBy: req.user._id
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).catch(() => {});
 
   // Check if all required documents are present
   const docs = user.documents || {};
@@ -339,8 +380,7 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   // Mandatory documents as per new requirement: PAN, Aadhar, Degree Certificate
   const required = ['pan', 'aadhar', 'degreeCertificate'];
   
-  // Check if every required document exists and has a URL
-  const allPresent = required.every(key => docs[key] && docs[key].url);
+  const allPresent = required.every((key) => docs[key] && (docs[key].publicId || docs[key].url));
 
   // Trigger Offer Letter if all docs are present AND status is DOCUMENT_PENDING
   // (Or if status is roughly correct, to allow re-trigger if failed before)
@@ -362,7 +402,7 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
     }
   }
 
-  res.status(200).json({ success: true, data: user, url: result.secure_url });
+  res.status(200).json({ success: true, data: user });
 });
 
 exports.autoGenerateOfferLetter = async (user, hrId) => {
@@ -384,26 +424,34 @@ exports.autoGenerateOfferLetter = async (user, hrId) => {
         throw pdfErr; // Re-throw to be caught by caller
     }
 
-    // 3. Upload to Cloudinary
-    let pdfUrl = '';
+    // 3. Upload to Cloudinary (Private)
+    let storage = null;
     try {
         const uploaded = await cloudinary.uploader.upload(filePath, {
             resource_type: 'raw',
             folder: 'documents',
-            public_id: fileName
+            public_id: fileName,
+            type: 'private'
         });
-        pdfUrl = uploaded.secure_url;
+        storage = {
+          provider: 'cloudinary',
+          publicId: uploaded.public_id,
+          resourceType: uploaded.resource_type,
+          format: uploaded.format,
+          deliveryType: uploaded.type,
+          version: uploaded.version
+        };
     } catch (e) {
         console.error('Cloudinary upload failed (PDF):', e);
-        // Don't throw, just log. But we can't save URL.
     }
 
     // 4. Create Document Record
-    if (pdfUrl) {
+    if (storage) {
         await Document.create({
             employeeId: user._id,
             type: 'offer_letter',
-            url: pdfUrl,
+            url: '',
+            storage,
             status: 'PendingSignature', // Ready to be sent
             uploadedBy: hrId
         });
@@ -411,7 +459,7 @@ exports.autoGenerateOfferLetter = async (user, hrId) => {
         // Update User
         await User.findByIdAndUpdate(user._id, {
             $set: {
-                'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() },
+                'documents.offerLetter': { url: '', uploadedAt: Date.now(), ...storage },
                 status: 'OFFER_LETTER_PENDING'
             }
         });
@@ -482,8 +530,8 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   if (joiningDate) update.joiningDate = joiningDate;
   if (departmentId) update.departmentId = departmentId;
   if (teamId) update.teamId = teamId;
-  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = Number(ctc);
   const { encryptField } = require('../utils/fieldCrypto');
+  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = encryptField(Number(ctc));
   if (panNumber) update['personalDetails.panNumber'] = encryptField(panNumber);
   if (aadharNumber) update['personalDetails.aadharNumber'] = encryptField(aadharNumber);
   if (fatherName) update['personalDetails.fatherName'] = fatherName;
@@ -529,7 +577,7 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
       status: { $in: ['PendingSignature', 'Sent'] }
   });
 
-  let pdfUrl = doc ? doc.url : '';
+  let storage = doc ? doc.storage : null;
   let token = doc ? doc.token : '';
 
   // If no existing doc, generate one
@@ -543,13 +591,21 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
         const uploaded = await cloudinary.uploader.upload(filePath, {
           resource_type: 'raw',
           folder: 'documents',
-          public_id: fileName
+          public_id: fileName,
+          type: 'private'
         });
-        pdfUrl = uploaded.secure_url;
+        storage = {
+          provider: 'cloudinary',
+          publicId: uploaded.public_id,
+          resourceType: uploaded.resource_type,
+          format: uploaded.format,
+          deliveryType: uploaded.type,
+          version: uploaded.version
+        };
       } catch (e) {
         console.error('PDF Generation/Upload Failed:', e);
         // Continue if possible? No, we need PDF.
-        if (!pdfUrl) return res.status(500).json({ success: false, error: 'Failed to generate/upload Offer Letter' });
+        if (!storage) return res.status(500).json({ success: false, error: 'Failed to generate/upload Offer Letter' });
       }
 
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -559,7 +615,8 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
       doc = await Document.create({
         employeeId: employee._id,
         type: 'offer_letter',
-        url: pdfUrl,
+        url: '',
+        storage,
         token,
         status: 'Sent',
         uploadedBy: req.user.id
@@ -578,7 +635,7 @@ exports.sendOfferLetterToCandidate = asyncHandler(async (req, res) => {
   // Update User Status
   await User.findByIdAndUpdate(employee._id, {
     $set: {
-      'documents.offerLetter': { url: pdfUrl, uploadedAt: Date.now() },
+      'documents.offerLetter': { url: '', uploadedAt: Date.now(), ...(storage || {}) },
       status: 'OFFER_LETTER_PENDING' // Ensure status is correct
     }
   });
@@ -672,6 +729,7 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   }
 
   // 3. Create or Update User
+  const { encryptField } = require('../utils/fieldCrypto');
   const update = {};
   if (fullName) update.fullName = fullName;
   if (email) update.email = email;
@@ -680,9 +738,9 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   if (joiningDate) update.joiningDate = joiningDate;
   if (departmentId) update.departmentId = departmentId;
   if (teamId) update.teamId = teamId;
-  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = Number(ctc);
-  if (panNumber) update['personalDetails.panNumber'] = panNumber;
-  if (aadharNumber) update['personalDetails.aadharNumber'] = aadharNumber;
+  if (ctc !== undefined && ctc !== null && ctc !== '') update['salary.ctc'] = encryptField(Number(ctc));
+  if (panNumber) update['personalDetails.panNumber'] = encryptField(panNumber);
+  if (aadharNumber) update['personalDetails.aadharNumber'] = encryptField(aadharNumber);
   if (fatherName) update['personalDetails.fatherName'] = fatherName;
 
   if (!user) {
@@ -740,14 +798,22 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
         return res.status(500).json({ success: false, error: 'Failed to generate Joining Agreement PDF' });
       }
 
-      let pdfUrl = '';
+      let storage = null;
       try {
         const uploaded = await cloudinary.uploader.upload(filePath, {
           resource_type: 'raw',
           folder: 'documents',
-          public_id: fileName
+          public_id: fileName,
+          type: 'private'
         });
-        pdfUrl = uploaded.secure_url;
+        storage = {
+          provider: 'cloudinary',
+          publicId: uploaded.public_id,
+          resourceType: uploaded.resource_type,
+          format: uploaded.format,
+          deliveryType: uploaded.type,
+          version: uploaded.version
+        };
       } catch (e) {
          console.error('Cloudinary upload failed', e);
          return res.status(500).json({ success: false, error: 'Failed to upload PDF to Cloudinary' });
@@ -761,7 +827,8 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
         type: 'joining_agreement', 
         token,
         tokenExpiry,
-        url: pdfUrl,
+        url: '',
+        storage,
         status: 'Sent',
         hrSignature,
         hrSignedAt: hrSignature ? Date.now() : undefined,
@@ -783,8 +850,8 @@ exports.sendJoiningAgreementToCandidate = asyncHandler(async (req, res) => {
   // Update User Status
   await User.findByIdAndUpdate(employee._id, {
     $set: {
-      'documents.joiningLetter': { url: document.url, uploadedAt: Date.now() },
-      'documents.joiningAgreement': { url: document.url, uploadedAt: Date.now() },
+      'documents.joiningLetter': { url: '', uploadedAt: Date.now(), ...(document.storage || {}) },
+      'documents.joiningAgreement': { url: '', uploadedAt: Date.now(), ...(document.storage || {}) },
       status: 'JOINING_LETTER_PENDING'
     }
   });
@@ -920,24 +987,33 @@ exports.autoGenerateJoiningLetter = async (user) => {
 
     await new Promise((resolve) => writeStream.on('finish', resolve));
 
-    // 3. Upload to Cloudinary
-    let pdfUrl = '';
+    // 3. Upload to Cloudinary (Private)
+    let storage = null;
     try {
         const uploaded = await cloudinary.uploader.upload(filePath, {
             resource_type: 'raw',
             folder: 'documents',
-            public_id: fileName
+            public_id: fileName,
+            type: 'private'
         });
-        pdfUrl = uploaded.secure_url;
+        storage = {
+          provider: 'cloudinary',
+          publicId: uploaded.public_id,
+          resourceType: uploaded.resource_type,
+          format: uploaded.format,
+          deliveryType: uploaded.type,
+          version: uploaded.version
+        };
     } catch (e) { console.error(e); }
 
     // 4. Create Document Record
-    if (pdfUrl) {
+    if (storage) {
         const token = crypto.randomBytes(32).toString('hex');
         await Document.create({
             employeeId: user._id,
             type: 'joining_letter',
-            url: pdfUrl,
+            url: '',
+            storage,
             status: 'PendingSignature',
             token,
             tokenExpiry: Date.now() + 7 * 24 * 60 * 60 * 1000
@@ -946,7 +1022,7 @@ exports.autoGenerateJoiningLetter = async (user) => {
         // Update User
         await User.findByIdAndUpdate(user._id, {
             $set: {
-                'documents.joiningLetter': { url: pdfUrl, uploadedAt: Date.now() },
+                'documents.joiningLetter': { url: '', uploadedAt: Date.now(), ...storage },
                 status: 'JOINING_LETTER_PENDING'
             }
         });
@@ -983,11 +1059,126 @@ exports.sendAccountActivationEmail = async (user) => {
 // @route   GET /api/documents/:employeeId
 // @access  Private
 exports.getDocuments = asyncHandler(async (req, res, next) => {
-  const documents = await Document.find({ employeeId: req.params.employeeId });
+  const requestedEmployeeId = String(req.params.employeeId || '');
+  if (!requestedEmployeeId) {
+    return res.status(400).json({ success: false, error: 'Employee ID is required' });
+  }
+
+  if (req.user.role === 'employee' && String(req.user._id) !== requestedEmployeeId) {
+    return res.status(403).json({ success: false, error: 'Not authorized' });
+  }
+
+  if (req.user.role === 'manager') {
+    const reportees = await User.aggregate([
+      { $match: { _id: req.user._id } },
+      {
+        $graphLookup: {
+          from: 'users',
+          startWith: '$_id',
+          connectFromField: '_id',
+          connectToField: 'reportingManagerId',
+          as: 'desc'
+        }
+      },
+      { $project: { ids: { $concatArrays: [['$_id'], '$desc._id'] } } }
+    ]);
+    const allowed = new Set((reportees[0]?.ids || []).map((x) => String(x)));
+    if (!allowed.has(requestedEmployeeId)) {
+      return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
+  }
+
+  const documents = await Document.find({ employeeId: requestedEmployeeId }).select('_id employeeId type status createdAt updatedAt').lean();
+  const safeDocs = (documents || []).map((d) => ({
+    _id: d._id,
+    employeeId: d.employeeId,
+    type: d.type,
+    status: d.status,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt
+  }));
 
   res.status(200).json({
     success: true,
-    count: documents.length,
-    data: documents
+    count: safeDocs.length,
+    data: safeDocs
   });
+});
+
+exports.getSignedDownloadUrl = asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!id) return res.status(400).json({ success: false, error: 'Document ID is required' });
+
+  const doc = await Document.findById(id).select('employeeId').lean();
+  if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+  const employeeId = String(doc.employeeId || '');
+
+  if (req.user.role === 'employee' && String(req.user._id) !== employeeId) {
+    return res.status(403).json({ success: false, error: 'Not authorized' });
+  }
+  if (req.user.role === 'manager' && String(req.user._id) !== employeeId) {
+    const reportees = await User.aggregate([
+      { $match: { _id: req.user._id } },
+      {
+        $graphLookup: {
+          from: 'users',
+          startWith: '$_id',
+          connectFromField: '_id',
+          connectToField: 'reportingManagerId',
+          as: 'desc'
+        }
+      },
+      { $project: { ids: { $concatArrays: [['$_id'], '$desc._id'] } } }
+    ]);
+    const allowed = new Set((reportees[0]?.ids || []).map((x) => String(x)));
+    if (!allowed.has(employeeId)) {
+      return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
+  }
+
+  const expiresAtMs = Date.now() + 5 * 60 * 1000;
+  const { sign } = require('../utils/signedUrl');
+  const sig = sign({ id, employeeId, expiresAtMs });
+  const base = String(process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
+  const urlBase = base ? base : '';
+  const url = `${urlBase}/api/documents/download/${id}?employeeId=${encodeURIComponent(employeeId)}&expires=${expiresAtMs}&sig=${sig}`;
+
+  return res.status(200).json({ success: true, data: { url, expiresAt: new Date(expiresAtMs) } });
+});
+
+exports.downloadDocument = asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '');
+  const employeeId = String(req.query.employeeId || '');
+  const expiresAtMs = Number(req.query.expires || 0);
+  const sig = String(req.query.sig || '');
+
+  const { verify } = require('../utils/signedUrl');
+  if (!verify({ id, employeeId, expiresAtMs, sig })) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired download link' });
+  }
+
+  const doc = await Document.findById(id).select('employeeId url storage').lean();
+  if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+  if (String(doc.employeeId || '') !== employeeId) {
+    return res.status(401).json({ success: false, error: 'Invalid download link' });
+  }
+  const storage = doc.storage || {};
+  const publicId = storage.publicId;
+  const resourceType = storage.resourceType || 'raw';
+  const format = storage.format || '';
+  const deliveryType = storage.deliveryType || 'private';
+
+  if (publicId && format) {
+    const cloudinary = require('../config/cloudinary');
+    const url = cloudinary.utils.private_download_url(publicId, format, {
+      resource_type: resourceType,
+      type: deliveryType,
+      expires_at: Math.floor(expiresAtMs / 1000)
+    });
+    return res.redirect(url);
+  }
+
+  if (doc.url) return res.redirect(String(doc.url));
+  return res.status(404).json({ success: false, error: 'Document file not available' });
 });

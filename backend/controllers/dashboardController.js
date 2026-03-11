@@ -51,8 +51,9 @@ exports.getStats = asyncHandler(async (req, res, next) => {
 
   // Total Payroll (monthly) in Lakhs, computed from employees' annual CTC
   let monthlyTotal = 0;
+  const { decryptField } = require('../utils/fieldCrypto');
   for (const e of employees) {
-    const annual = (e.salary && typeof e.salary.ctc === 'number') ? e.salary.ctc : 0;
+    const annual = Number(decryptField(e?.salary?.ctc ?? 0) || 0);
     monthlyTotal += annual / 12;
   }
   const totalPayrollL = Math.round((monthlyTotal / 100000) * 100) / 100; // round to 2 decimals

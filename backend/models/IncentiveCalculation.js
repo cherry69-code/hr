@@ -58,8 +58,19 @@ const IncentiveCalculationSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Pending Collection', 'Pending', 'Approved', 'Paid'],
+      enum: ['Pending Collection', 'Pending', 'Approved', 'Rejected', 'Paid'],
       default: 'Pending'
+    },
+    rejectedAt: {
+      type: Date
+    },
+    rejectedBy: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'User'
+    },
+    rejectionReason: {
+      type: String,
+      trim: true
     },
     calculatedAt: {
       type: Date

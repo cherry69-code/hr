@@ -7,6 +7,7 @@ import { LocationsPageComponent } from '../locations/locations-page.component';
 import { ToastService } from '../services/toast.service';
 import { environment } from '../../environments/environment';
 import * as L from 'leaflet';
+import { getBestPosition } from '../utils/geolocation';
 
 @Component({
   selector: 'app-attendance-page',
@@ -31,6 +32,7 @@ export class AttendancePageComponent implements OnInit {
   gpsRefreshing = false;
   lastGpsFixAt: Date | null = null;
   lastGpsAccuracyMeters: number | null = null;
+  gpsLowAccuracy = false;
   // Offsite modal
   showOffsite = false;
   // Map instance (Leaflet)
@@ -107,30 +109,46 @@ export class AttendancePageComponent implements OnInit {
     }
 
     this.gpsRefreshing = true;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })
+      .then((pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         this.lastGpsFixAt = new Date();
         this.lastGpsAccuracyMeters = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+        this.gpsLowAccuracy = this.lastGpsAccuracyMeters !== null && this.lastGpsAccuracyMeters > 500;
 
-        const userIcon = L.divIcon({ className: 'custom-user', html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
-        if (this.userMarker) { try { this.map.removeLayer(this.userMarker); } catch {} }
+        const userIcon = L.divIcon({
+          className: 'custom-user',
+          html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        if (this.userMarker) {
+          try {
+            this.map.removeLayer(this.userMarker);
+          } catch {}
+        }
         this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
 
         this.computeNearest(lat, lng);
-        try { this.map.panTo([lat, lng]); } catch {}
-        try { this.map.invalidateSize(); } catch {}
+        try {
+          this.map.panTo([lat, lng]);
+        } catch {}
+        try {
+          this.map.invalidateSize();
+        } catch {}
 
         this.gpsRefreshing = false;
-        if (showToast) this.toast.success('GPS refreshed');
-      },
-      () => {
+        if (this.gpsLowAccuracy) {
+          this.statusMessage = 'GPS accuracy is low on desktop. Turn on Windows Location Services and disable VPN, then Refresh GPS.';
+        } else if (showToast) {
+          this.toast.success('GPS refreshed');
+        }
+      })
+      .catch(() => {
         this.gpsRefreshing = false;
         if (showToast) this.toast.error('Unable to refresh GPS. Please enable Location.');
-      },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-    );
+      });
   }
 
   computeNearest(lat: number, lng: number) {
@@ -143,6 +161,10 @@ export class AttendancePageComponent implements OnInit {
     this.nearestLocationName = best.location.name;
     this.nearestDistanceMeters = Math.round(best.distance);
     // Strict policy: 20m radius only
+    if (this.gpsLowAccuracy) {
+      this.withinRadius = false;
+      return;
+    }
     this.withinRadius = best.distance <= 20;
   }
 

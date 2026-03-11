@@ -51,6 +51,10 @@ export class IncentiveService {
     return this.http.put(`${this.apiUrl}/incentives/calculations/${id}/approve`, {});
   }
 
+  rejectCalculation(id: string, reason: string = ''): Observable<any> {
+    return this.http.put(`${this.apiUrl}/incentives/calculations/${id}/reject`, { reason });
+  }
+
   payQuarter(year: number, quarter: number): Observable<any> {
     return this.http.post(`${this.apiUrl}/incentives/payout/quarter`, { year, quarter });
   }

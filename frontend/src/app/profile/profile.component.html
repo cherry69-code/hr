@@ -197,18 +197,17 @@
         <input type="file" #fileInput hidden (change)="onFileSelected($event)">
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <!-- Document Item -->
-          <ng-container *ngFor="let doc of ['aadhar', 'pan', 'degreeCertificate', 'offerLetter', 'joiningLetter']">
+          <ng-container *ngFor="let doc of ['aadhar', 'pan', 'degreeCertificate', 'offer_letter', 'joining_letter', 'joining_agreement']">
             <div class="border rounded-xl p-4 flex justify-between items-center bg-white hover:shadow-sm transition">
               <div>
-                <p class="text-sm font-semibold capitalize text-gray-700">{{ formatDocName(doc) }}</p>
+                <p class="text-sm font-semibold capitalize text-gray-700">{{ doc.replace('_', ' ') }}</p>
                 <p class="text-xs text-gray-400">
-                  {{ user.documents?.[doc]?.url ? 'Uploaded ' + (user.documents[doc].uploadedAt | date:'shortDate') : 'Not Uploaded' }}
+                  {{ documentsIndex?.[doc]?._id ? 'Uploaded ' + ((documentsIndex[doc].createdAt || documentsIndex[doc].updatedAt) | date:'shortDate') : 'Not Uploaded' }}
                 </p>
               </div>
               <div class="flex gap-2">
-                <a *ngIf="user.documents?.[doc]?.url" [href]="user.documents[doc].url" target="_blank" class="text-blue-600 hover:text-blue-800 text-xs font-bold bg-blue-50 px-2 py-1 rounded">View</a>
-                <button *ngIf="canEdit" (click)="triggerUpload(doc, fileInput)" class="text-gray-600 hover:text-[#16A34A] bg-gray-100 hover:bg-green-50 p-1.5 rounded transition">
+                <button *ngIf="documentsIndex?.[doc]?._id" (click)="openDocumentByType(doc)" class="text-blue-600 hover:text-blue-800 text-xs font-bold bg-blue-50 px-2 py-1 rounded">View</button>
+                <button *ngIf="canEdit && (doc === 'aadhar' || doc === 'pan' || doc === 'degreeCertificate')" (click)="triggerUpload(doc, fileInput)" class="text-gray-600 hover:text-[#16A34A] bg-gray-100 hover:bg-green-50 p-1.5 rounded transition">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>

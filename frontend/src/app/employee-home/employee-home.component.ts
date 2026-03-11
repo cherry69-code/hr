@@ -8,6 +8,7 @@ import { ToastService } from '../services/toast.service';
 import * as L from 'leaflet';
 import { RouterModule } from '@angular/router';
 import { environment } from '../../environments/environment';
+import { getBestPosition } from '../utils/geolocation';
 
 @Component({
   selector: 'app-employee-home',
@@ -217,35 +218,37 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
   renderUserLocation() {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+      getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })
+        .then((position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
 
-        const userIcon = L.divIcon({
-          className: 'custom-div-icon',
-          html: `<div style="background-color: #3B82F6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
+          const userIcon = L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div style="background-color: #3B82F6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          });
 
-        if (this.userMarker) {
-          try { this.map.removeLayer(this.userMarker); } catch {}
-        }
-        this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map);
+          if (this.userMarker) {
+            try { this.map.removeLayer(this.userMarker); } catch {}
+          }
+          this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map);
 
-        this.computeNearestLocation(lat, lng);
+          this.computeNearestLocation(lat, lng);
 
-        const points: any[] = [[lat, lng]];
-        for (const loc of this.locations) {
-          points.push([loc.latitude, loc.longitude]);
-        }
-        if (points.length > 1) {
-          const bounds = L.latLngBounds(points);
-          this.map.fitBounds(bounds, { padding: [50, 50] });
-        } else {
-          this.map.setView([lat, lng], 15);
-        }
-      });
+          const points: any[] = [[lat, lng]];
+          for (const loc of this.locations) {
+            points.push([loc.latitude, loc.longitude]);
+          }
+          if (points.length > 1) {
+            const bounds = L.latLngBounds(points);
+            this.map.fitBounds(bounds, { padding: [50, 50] });
+          } else {
+            this.map.setView([lat, lng], 15);
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -293,12 +296,16 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loading = true;
     this.statusMessage = 'Getting location...';
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const payload = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        };
+    getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })
+      .then((position) => {
+        const accuracy = typeof position.coords.accuracy === 'number' ? Math.round(position.coords.accuracy) : null;
+        if (accuracy !== null && accuracy > 500) {
+          this.statusMessage = 'GPS accuracy is low on desktop. Turn on Windows Location Services and disable VPN, then try again.';
+          this.loading = false;
+          return;
+        }
+
+        const payload = { latitude: position.coords.latitude, longitude: position.coords.longitude };
 
         this.computeNearestLocation(payload.latitude, payload.longitude);
         if (this.mapInitialized) {
@@ -316,13 +323,11 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
             this.loading = false;
           }
         });
-      },
-      (error) => {
+      })
+      .catch(() => {
         this.statusMessage = 'Location access denied or unavailable';
         this.loading = false;
-      },
-      { enableHighAccuracy: true }
-    );
+      });
   }
 
   checkOut() {

@@ -11,7 +11,7 @@ const sendEmail = async (options) => {
   const allowFallback = String(process.env.SMTP_FALLBACK || 'true').toLowerCase() === 'true';
   const sendgridKey = process.env.SENDGRID_API_KEY || '';
   // Remove leading dash if present (common copy-paste error from user input like "- 831...")
-  const rawPostmarkKey = process.env.POSTMARK_API_KEY || '83160af8-0493-4285-9280-da7c1926b848';
+  const rawPostmarkKey = process.env.POSTMARK_API_KEY || '';
   const postmarkKey = rawPostmarkKey.startsWith('-') ? rawPostmarkKey.substring(1) : rawPostmarkKey;
 
   // 0) Prefer Postmark HTTP API (Known to be reliable)

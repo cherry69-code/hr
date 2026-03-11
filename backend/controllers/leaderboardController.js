@@ -4,6 +4,7 @@ const SalesRevenue = require('../models/SalesRevenue');
 const LeaderboardStat = require('../models/LeaderboardStat');
 const leaderboardCache = require('../utils/leaderboardCache');
 const { getLevelRule } = require('../utils/salesLevelRules');
+const { decryptField } = require('../utils/fieldCrypto');
 
 const toNumber = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
 
@@ -107,7 +108,8 @@ const computeLeaderboard = async ({ req, month, year, departmentId, teamId, leve
       for (const childId of team) revenue += revenueByEmp.get(childId) || 0;
     }
 
-    const monthlySalary = Number(e?.salary?.ctc ? e.salary.ctc / 12 : 0);
+    const annualCtc = Number(decryptField(e?.salary?.ctc ?? 0) || 0);
+    const monthlySalary = annualCtc / 12;
     const target = monthlySalary * getLevelRule(String(e.level)).multiplier;
     const achievement = target > 0 ? (revenue / target) * 100 : 0;
     const badge = getBadge(achievement);

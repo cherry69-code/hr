@@ -236,6 +236,7 @@ exports.generateOfferLetterPdf = async (employee, filePath, signatures = {}) => 
   const signingDate = signatures.employeeSignature ? new Date().toLocaleDateString('en-GB') : '________________';
   const salutationText = employee.salutation || 'Ms./Mr.';
   const { decryptField } = require('../utils/fieldCrypto');
+  const ctcDecrypted = Number(decryptField(employee.salary?.ctc || 0) || 0);
 
   if (offerContent) {
     // Replace placeholders
@@ -243,7 +244,7 @@ exports.generateOfferLetterPdf = async (employee, filePath, signatures = {}) => 
     offerContent = offerContent.replace(/{{designation}}/g, employee.designation);
     offerContent = offerContent.replace(/{{joiningDate}}/g, joinDt);
     offerContent = offerContent.replace(/{{signingDate}}/g, signingDate);
-    offerContent = offerContent.replace(/{{ctc}}/g, employee.salary?.ctc || 0);
+    offerContent = offerContent.replace(/{{ctc}}/g, ctcDecrypted || 0);
     offerContent = offerContent.replace(/{{address}}/g, employee.address || 'Address not provided');
     offerContent = offerContent.replace(/{{email}}/g, employee.email);
     offerContent = offerContent.replace(/{{today}}/g, today);
@@ -405,7 +406,9 @@ exports.generateJoiningAgreementPdf = async (employee, filePath, signatures = {}
   const salutationText = employee.salutation || 'Ms./Mr.';
   const joinDt = employee.joiningDate ? new Date(employee.joiningDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase() : '________________';
   const signingDate = signatures.employeeSignature ? new Date().toLocaleDateString('en-GB') : '________________';
-  const ctc = employee.salary?.ctc || 0;
+  const { decryptField } = require('../utils/fieldCrypto');
+  const ctcDecrypted = Number(decryptField(employee.salary?.ctc || 0) || 0);
+  const ctc = ctcDecrypted || 0;
   const fatherName = employee.personalDetails?.fatherName || '________________';
   const address = employee.address || '________________';
   const designation = employee.designation || '________________';
@@ -436,7 +439,7 @@ exports.generateJoiningAgreementPdf = async (employee, filePath, signatures = {}
     agreementContent = agreementContent.replace(/{{designation}}/g, employee.designation);
     agreementContent = agreementContent.replace(/{{joiningDate}}/g, joinDt);
     agreementContent = agreementContent.replace(/{{signingDate}}/g, signingDate);
-    agreementContent = agreementContent.replace(/{{ctc}}/g, employee.salary?.ctc || 0);
+    agreementContent = agreementContent.replace(/{{ctc}}/g, ctcDecrypted || 0);
     agreementContent = agreementContent.replace(/{{address}}/g, employee.address || '');
     agreementContent = agreementContent.replace(/{{email}}/g, employee.email);
     agreementContent = agreementContent.replace(/{{fatherName}}/g, employee.personalDetails?.fatherName || '');
@@ -694,7 +697,8 @@ exports.generateDocumentHtml = async (type, employee) => {
   if (!content) return '';
 
   const joinDt = employee.joiningDate ? new Date(employee.joiningDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase() : '________________';
-  const ctc = employee.salary?.ctc || 0;
+  const { decryptField } = require('../utils/fieldCrypto');
+  const ctc = Number(decryptField(employee.salary?.ctc || 0) || 0);
   const fatherName = employee.personalDetails?.fatherName || '________________';
   const address = employee.address || '________________';
   const designation = employee.designation || '________________';
@@ -712,7 +716,6 @@ exports.generateDocumentHtml = async (type, employee) => {
   content = content.replace(/{{today}}/g, new Date().toLocaleDateString('en-GB'));
   content = content.replace(/{{salutation}}/g, salutationText);
   {
-    const { decryptField } = require('../utils/fieldCrypto');
     const aad = employee.personalDetails?.aadharNumber;
     const pan = employee.personalDetails?.panNumber;
     content = content.replace(/{{aadharNumber}}/g, aad ? decryptField(aad) : '________________');

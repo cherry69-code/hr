@@ -131,6 +131,19 @@ export class IncentiveAnalyticsComponent implements OnInit {
     });
   }
 
+  reject(id: string) {
+    const reason = prompt('Reject reason (optional)') || '';
+    if (!confirm('Are you sure you want to reject this incentive?')) return;
+
+    this.incentiveService.rejectCalculation(id, reason).subscribe({
+      next: () => {
+        this.toast.success('Incentive rejected');
+        this.loadCalculations();
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Rejection failed')
+    });
+  }
+
   loadRevenue() {
     this.incentiveService.getRevenue({ month: this.calcForm.month, year: this.calcForm.year }).subscribe({
       next: (res: any) => this.revenues = res.data || [],

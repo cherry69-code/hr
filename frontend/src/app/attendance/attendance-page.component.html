@@ -5,7 +5,7 @@
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-[#0F172A]">Work Attendance</h2>
       <div class="flex items-center gap-3">
-        <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ withinRadius ? 'OK' : 'Out of Range' }}</span></div>
+        <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ gpsLowAccuracy ? 'Low Accuracy' : (withinRadius ? 'OK' : 'Out of Range') }}</span></div>
         <button type="button" (click)="refreshGps()" [disabled]="gpsRefreshing"
           class="text-xs px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
           {{ gpsRefreshing ? 'Refreshing...' : 'Refresh GPS' }}

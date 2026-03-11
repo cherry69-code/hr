@@ -67,6 +67,8 @@ exports.register = asyncHandler(async (req, res, next) => {
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
   const { email, password, employeeCode } = req.body;
+  const MAX_ATTEMPTS = 5;
+  const LOCK_MS = 15 * 60 * 1000;
 
   if (!password) {
     return res.status(400).json({ success: false, error: 'Please provide password' });
@@ -87,10 +89,25 @@ exports.login = asyncHandler(async (req, res, next) => {
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
   }
 
+  if (user.lockUntil && user.lockUntil.getTime && user.lockUntil.getTime() > Date.now()) {
+    return res.status(429).json({ success: false, error: 'Account temporarily locked. Try again later.' });
+  }
+
   const isMatch = await user.matchPassword(password);
 
   if (!isMatch) {
+    const attempts = Number(user.loginAttempts || 0) + 1;
+    user.loginAttempts = attempts;
+    if (attempts >= MAX_ATTEMPTS) {
+      user.lockUntil = new Date(Date.now() + LOCK_MS);
+    }
+    await user.save({ validateBeforeSave: false });
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+
+  if (user.loginAttempts || user.lockUntil) {
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
   }
 
   const token = createAccessToken(user);

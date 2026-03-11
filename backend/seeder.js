@@ -122,7 +122,9 @@ const importData = async () => {
       });
       console.log(`Employee User Created: ${employeeEmail}`);
     } else {
-      if (!employeeExists.salary || Number(employeeExists.salary.ctc || 0) === 0) {
+      const { decryptField } = require('./utils/fieldCrypto');
+      const existingCtc = Number(decryptField(employeeExists?.salary?.ctc ?? 0) || 0);
+      if (!employeeExists.salary || existingCtc === 0) {
         employeeExists.salary = { ...(employeeExists.salary || {}), ctc: 1200000 };
         await employeeExists.save();
         console.log('Employee CTC initialized');

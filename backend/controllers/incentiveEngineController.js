@@ -1,6 +1,7 @@
 const SalesRevenue = require('../models/SalesRevenue');
 const IncentiveCalculation = require('../models/IncentiveCalculation');
 const User = require('../models/User');
+const Payslip = require('../models/Payslip');
 const asyncHandler = require('../middlewares/asyncHandler');
 const { invalidateLeaderboardCache } = require('./leaderboardController');
 const { getLevelRule } = require('../utils/salesLevelRules');
@@ -37,6 +38,11 @@ const computeIncentive = ({ level, baseSalary, eligibleRevenue }) => {
     cashComponent: cash,
     esopComponent: esop
   };
+};
+
+const isPayrollLocked = async ({ employeeId, month, year }) => {
+  const slip = await Payslip.findOne({ employeeId, month, year, status: 'Generated' }).select('_id').lean();
+  return Boolean(slip);
 };
 
 // Revenue Entry
@@ -165,9 +171,17 @@ exports.calculateMonthly = asyncHandler(async (req, res) => {
   };
 
   const results = [];
+  const { decryptField } = require('../utils/fieldCrypto');
 
   for (const emp of employees) {
-    const baseSalary = Number(emp?.salary?.ctc ? emp.salary.ctc / 12 : 0);
+    const locked = await isPayrollLocked({ employeeId: emp._id, month, year });
+    if (locked) {
+      const existing = await IncentiveCalculation.findOne({ employeeId: emp._id, month, year }).lean();
+      if (existing) results.push(existing);
+      continue;
+    }
+    const annualCtc = Number(decryptField(emp?.salary?.ctc ?? 0) || 0);
+    const baseSalary = annualCtc / 12;
     const selfId = String(emp._id);
     let revenueEmpIds = [selfId];
     if (String(emp.level) === 'N2') {
@@ -316,9 +330,39 @@ exports.approveCalculation = asyncHandler(async (req, res) => {
   if (calc.status === 'Pending Collection') {
     return res.status(400).json({ success: false, error: 'Cannot approve while pending collection' });
   }
+  if (await isPayrollLocked({ employeeId: calc.employeeId, month: calc.month, year: calc.year })) {
+    return res.status(400).json({ success: false, error: 'Incentive is locked after payroll generation' });
+  }
   calc.status = 'Approved';
   calc.approvedAt = new Date();
   calc.approvedBy = req.user._id;
+  calc.rejectedAt = undefined;
+  calc.rejectedBy = undefined;
+  calc.rejectionReason = '';
+  await calc.save();
+  return res.status(200).json({ success: true, data: calc });
+});
+
+exports.rejectCalculation = asyncHandler(async (req, res) => {
+  const calc = await IncentiveCalculation.findById(req.params.id);
+  if (!calc) return res.status(404).json({ success: false, error: 'Incentive not found' });
+  if (calc.status === 'Paid') {
+    return res.status(400).json({ success: false, error: 'Cannot reject a paid incentive' });
+  }
+  if (calc.status === 'Pending Collection') {
+    return res.status(400).json({ success: false, error: 'Cannot reject while pending collection' });
+  }
+  if (await isPayrollLocked({ employeeId: calc.employeeId, month: calc.month, year: calc.year })) {
+    return res.status(400).json({ success: false, error: 'Incentive is locked after payroll generation' });
+  }
+
+  const reason = String(req.body?.reason || '').trim();
+  calc.status = 'Rejected';
+  calc.rejectedAt = new Date();
+  calc.rejectedBy = req.user._id;
+  calc.rejectionReason = reason;
+  calc.approvedAt = undefined;
+  calc.approvedBy = undefined;
   await calc.save();
   return res.status(200).json({ success: true, data: calc });
 });

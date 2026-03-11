@@ -18,4 +18,8 @@ export class DocumentService {
   getDocuments(employeeId: string): Observable<any> {
     return this.http.get(`${this.apiUrl}/${employeeId}`);
   }
+
+  getSignedUrl(documentId: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/signed-url/${documentId}`);
+  }
 }

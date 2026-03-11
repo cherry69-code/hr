@@ -35,7 +35,9 @@ exports.calculateIncentive = asyncHandler(async (req, res, next) => {
   // Target = Multiplier * Monthly CTC
   // slab.eligibilityTarget now stores the Multiplier (e.g. 5)
   const multiplier = slab.eligibilityTarget || 5; 
-  const monthlySalary = (employee.salary && employee.salary.ctc) ? (employee.salary.ctc / 12) : 0;
+  const { decryptField } = require('../utils/fieldCrypto');
+  const annualCtc = Number(decryptField(employee?.salary?.ctc ?? 0) || 0);
+  const monthlySalary = annualCtc / 12;
   const target = monthlySalary * multiplier;
   
   // Prevent division by zero if salary is missing

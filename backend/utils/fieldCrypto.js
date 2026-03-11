@@ -2,7 +2,9 @@ const crypto = require('crypto');
 
 const keyHex = process.env.FIELD_ENC_KEY || '';
 if (!keyHex || keyHex.length < 64) {
-  // no-op fallback: use zeros (not recommended for production)
+  if (String(process.env.NODE_ENV).toLowerCase() === 'production') {
+    throw new Error('FIELD_ENC_KEY is required in production');
+  }
 }
 const key = Buffer.from((keyHex || '').padEnd(64, '0').slice(0, 64), 'hex');
 
@@ -30,4 +32,3 @@ const decryptField = (val) => {
 };
 
 module.exports = { encryptField, decryptField };
-
