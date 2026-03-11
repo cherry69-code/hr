@@ -3,8 +3,23 @@
   <!-- Header -->
   <div class="bg-[#0F172A] p-6 text-white flex justify-between items-center">
     <div class="flex items-center gap-4">
-      <div class="w-16 h-16 bg-[#16A34A] rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white/20">
-        {{ user.fullName?.charAt(0) }}
+      <div class="relative">
+        <img
+          [src]="user.profilePicture || user.documents?.photo?.url || ('https://ui-avatars.com/api/?name=' + (user.fullName || 'User') + '&background=random')"
+          class="w-16 h-16 rounded-full object-cover border-4 border-white/20 bg-white"
+          alt="Profile"
+        />
+        <input #profileImageInput type="file" accept="image/*" class="hidden" (change)="onProfileImageSelected($event)" />
+        <button *ngIf="canUploadProfileImage" (click)="triggerProfileImageUpload(profileImageInput)"
+                class="absolute -bottom-1 -right-1 bg-white text-[#0F172A] rounded-full p-1.5 shadow hover:bg-gray-100 transition"
+                [disabled]="uploadingProfileImage">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 7h4l2-2h6l2 2h4v12H3V7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 11a3 3 0 100 6 3 3 0 000-6z" />
+          </svg>
+        </button>
       </div>
       <div>
         <h1 class="text-2xl font-bold">{{ user.fullName }}</h1>
@@ -46,6 +61,15 @@
               [ngClass]="user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
               {{ user.status }}
             </span>
+          </div>
+          <div *ngIf="leaderboardStats?.badge">
+            <p class="text-gray-500">Badge</p>
+            <span class="px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-700">
+              {{ leaderboardStats.badge }}
+            </span>
+            <div class="text-xs text-gray-400 mt-1">
+              Rank #{{ leaderboardStats.rank }} • {{ leaderboardStats.achievement | number:'1.0-0' }}%
+            </div>
           </div>
         </div>
       </div>

@@ -22,11 +22,13 @@ export class ProfileComponent implements OnInit {
   user: any = null;
   loading = false;
   uploading = false;
+  leaderboardStats: any = null;
 
   // For HR View/Edit
   isEditing = false;
   canEdit = false;
   currentUploadDocType = '';
+  uploadingProfileImage = false;
 
   // New fields for HR update
   editForm: any = {
@@ -59,8 +61,22 @@ export class ProfileComponent implements OnInit {
         this.canEdit = currentUserRole === 'hr' || currentUserRole === 'admin';
         this.initEditForm();
         this.loading = false;
+        this.loadLeaderboardStats();
       },
       error: () => this.loading = false
+    });
+  }
+
+  loadLeaderboardStats() {
+    if (!this.user?._id) return;
+    const d = new Date();
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+    const role = this.authService.getRole();
+    const qs = (role === 'admin' || role === 'hr') ? `&employeeId=${this.user._id}` : '';
+    this.http.get(`${environment.apiUrl}/leaderboard/me?month=${month}&year=${year}${qs}`).subscribe({
+      next: (res: any) => this.leaderboardStats = res.data || null,
+      error: () => this.leaderboardStats = null
     });
   }
 
@@ -76,6 +92,12 @@ export class ProfileComponent implements OnInit {
         address: this.user.address || ''
       }
     };
+  }
+
+  get canUploadProfileImage() {
+    const currentUser = this.authService.currentUserValue;
+    const isSelf = currentUser?.id && (String(currentUser.id) === String(this.user?._id));
+    return this.canEdit || isSelf;
   }
 
   // HR Only: Update Profile Details
@@ -121,21 +143,50 @@ export class ProfileComponent implements OnInit {
     return doc.replace(/([A-Z])/g, ' $1').trim();
   }
 
-  // Handle File Upload (Simulated for now as backend needs Multer/S3,
-  // but we'll store a dummy URL or base64 if small, typically needs a proper /upload endpoint)
-  // For this demo, we will just update the document status/url manually or assume an upload service exists.
-  // Since we don't have a file upload endpoint ready in the prompt context, I will mock the "Upload"
-  // by prompting for a URL or just marking it as "Uploaded".
-
   uploadDocument(docType: string) {
-    // This is now triggered by the hidden file input
-    // The HTML will click the input element
   }
 
   triggerUpload(docType: string, fileInput: HTMLInputElement) {
     if (!this.canEdit) return;
     this.currentUploadDocType = docType;
     fileInput.click();
+  }
+
+  triggerProfileImageUpload(fileInput: HTMLInputElement) {
+    if (!this.canUploadProfileImage) return;
+    fileInput.click();
+  }
+
+  onProfileImageSelected(event: any) {
+    const file = event.target.files[0];
+    if (!file) return;
+    event.target.value = '';
+    if (file.size > 2 * 1024 * 1024) {
+      this.toast.error('Image too large. Please upload under 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64 = reader.result;
+      this.uploadProfileImage(base64);
+    };
+  }
+
+  uploadProfileImage(base64: any) {
+    if (!this.user?._id) return;
+    this.uploadingProfileImage = true;
+    this.http.put(`${environment.apiUrl}/employees/${this.user._id}/profile-picture`, { file: base64 }).subscribe({
+      next: (res: any) => {
+        this.user = res.data;
+        this.uploadingProfileImage = false;
+        this.toast.success('Profile image updated');
+      },
+      error: (err) => {
+        this.uploadingProfileImage = false;
+        this.toast.error(err.error?.error || 'Upload failed');
+      }
+    });
   }
 
   onFileSelected(event: any) {

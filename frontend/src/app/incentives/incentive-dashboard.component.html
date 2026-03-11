@@ -4,86 +4,110 @@
     Incentive Dashboard
   </h1>
 
-  <div *ngIf="!data" class="text-center py-10 text-gray-500">
+  <div class="bg-white p-6 rounded-2xl shadow mb-6">
+    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-800">My Incentives</h2>
+        <p class="text-xs text-gray-500 mt-1">Monthly calculation with Cash + ESOP split</p>
+      </div>
+      <div class="flex items-end gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+          <input type="number" [(ngModel)]="selectedYear" class="p-2 border rounded-lg w-28">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Month</label>
+          <input type="number" [(ngModel)]="selectedMonth" min="1" max="12" class="p-2 border rounded-lg w-24">
+        </div>
+        <button (click)="refresh()" [disabled]="loading"
+                class="bg-[#0F172A] hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50">
+          {{ loading ? 'Loading...' : 'Refresh' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="!summary" class="text-center py-10 text-gray-500">
     No incentive data available for the current period.
   </div>
 
-  <div *ngIf="data" class="grid md:grid-cols-4 gap-6 mb-6">
+  <div *ngIf="summary" class="grid md:grid-cols-4 gap-6 mb-6">
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">Total Incentive</p>
       <h2 class="text-2xl font-bold text-[#16A34A]">
-        ₹{{ data?.incentiveAmount || 0 }}
+        ₹{{ summary?.totalIncentive || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">Cash Payout</p>
       <h2 class="text-2xl font-bold text-[#0F172A]">
-        ₹{{ data?.cashPayout || 0 }}
+        ₹{{ summary?.cashComponent || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
       <p class="text-gray-500">ESOP Allocation</p>
       <h2 class="text-2xl font-bold text-purple-600">
-        ₹{{ data?.esopAllocation || 0 }}
+        ₹{{ summary?.esopComponent || 0 }}
       </h2>
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow">
-      <p class="text-gray-500">Override Bonus</p>
-      <h2 class="text-2xl font-bold text-orange-500">
-        ₹{{ data?.overrideBonus || 0 }}
+      <p class="text-gray-500">Status</p>
+      <h2 class="text-2xl font-bold"
+          [ngClass]="{
+            'text-yellow-700': summary?.status === 'Pending' || summary?.status === 'Pending Collection',
+            'text-green-700': summary?.status === 'Approved',
+            'text-blue-700': summary?.status === 'Paid'
+          }">
+        {{ summary?.status }}
       </h2>
     </div>
 
   </div>
 
-  <div *ngIf="data" class="bg-white p-6 rounded-2xl shadow mb-6">
-
-    <h2 class="text-lg font-semibold mb-4">Performance Details ({{ data?.period }})</h2>
-
-    <div class="grid md:grid-cols-3 gap-4">
-
-      <div>
-        <p class="text-gray-500">Target</p>
-        <p class="font-semibold">₹{{ data?.targetAmount || 0 }}</p>
-      </div>
-
-      <div>
-        <p class="text-gray-500">Achieved Amount</p>
-        <p class="font-semibold text-green-600">
-          ₹{{ data?.achievedAmount || 0 }}
-        </p>
-      </div>
-
-      <div>
-        <p class="text-gray-500">Achievement %</p>
-        <p class="font-semibold">
-          {{ data?.achievementPercentage | number:'1.0-2' }}%
-        </p>
-      </div>
-
+  <div class="bg-white rounded-2xl shadow overflow-hidden">
+    <div class="p-6 border-b">
+      <h2 class="text-lg font-semibold text-gray-800">Monthly Details</h2>
     </div>
 
-    <div class="mt-4 border-t pt-4 flex justify-between items-center">
-       <div>
-          <span class="text-gray-500 mr-2">Status:</span>
-          <span class="px-3 py-1 rounded-full text-xs font-medium"
-            [ngClass]="{
-                'bg-yellow-100 text-yellow-800': data?.status === 'Pending',
-                'bg-green-100 text-green-800': data?.status === 'Approved'
-            }">
-            {{ data?.status }}
-          </span>
-       </div>
-       <div *ngIf="data?.calculatedBy" class="text-sm text-gray-400">
-          Calculated by: {{ data?.calculatedBy?.fullName }}
-       </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm text-gray-600">
+        <thead class="bg-gray-50 uppercase font-medium text-gray-500">
+          <tr>
+            <th class="p-4">Month</th>
+            <th class="p-4">Revenue</th>
+            <th class="p-4">Target</th>
+            <th class="p-4">Base</th>
+            <th class="p-4">Above Target</th>
+            <th class="p-4">Team Bonus</th>
+            <th class="p-4">Total</th>
+            <th class="p-4">Cash</th>
+            <th class="p-4">ESOP</th>
+            <th class="p-4">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <tr *ngFor="let c of calculations" class="hover:bg-gray-50">
+            <td class="p-4">{{ c.month }}/{{ c.year }}</td>
+            <td class="p-4">₹{{ c.eligibleRevenue || 0 }}</td>
+            <td class="p-4">₹{{ c.targetRevenue || 0 }}</td>
+            <td class="p-4">₹{{ c.baseIncentive || 0 }}</td>
+            <td class="p-4">₹{{ c.aboveTargetIncentive || 0 }}</td>
+            <td class="p-4">₹{{ c.teamOverrideBonus || 0 }}</td>
+            <td class="p-4 font-semibold text-gray-900">₹{{ c.totalIncentive || 0 }}</td>
+            <td class="p-4">₹{{ c.cashComponent || 0 }}</td>
+            <td class="p-4">₹{{ c.esopComponent || 0 }}</td>
+            <td class="p-4">{{ c.status }}</td>
+          </tr>
+          <tr *ngIf="calculations.length === 0">
+            <td colspan="10" class="p-8 text-center text-gray-400">No incentive data available for the selected period.</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-
   </div>
 
 </div>
-

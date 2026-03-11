@@ -6,9 +6,10 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const cloudinary = require('cloudinary').v2;
+const cloudinary = require('../config/cloudinary');
 const { calculatePayroll } = require('../services/payroll.service');
 const AuditLog = require('../models/AuditLog');
+const IncentiveCalculation = require('../models/IncentiveCalculation');
 
 // @desc    Calculate monthly salary
 // @route   POST /api/payroll/calculate/:employeeId
@@ -87,6 +88,25 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
 
   const monthName = new Date(y, m - 1).toLocaleString('default', { month: 'long' });
 
+  let incentiveCash = 0;
+  let incentiveEsop = 0;
+  let incentiveStatus = '';
+  try {
+    const inc = await IncentiveCalculation.findOne({
+      employeeId: employee._id,
+      month: m,
+      year: y,
+      status: { $in: ['Approved', 'Paid'] }
+    })
+      .select('cashComponent esopComponent status')
+      .lean();
+    if (inc) {
+      incentiveCash = Number(inc.cashComponent || 0);
+      incentiveEsop = Number(inc.esopComponent || 0);
+      incentiveStatus = String(inc.status || '');
+    }
+  } catch {}
+
   const fileName = `Payslip_${employee._id}_${y}_${String(m).padStart(2, '0')}.pdf`;
   const filePath = path.join(os.tmpdir(), `${Date.now()}_${fileName}`);
 
@@ -107,9 +127,14 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
 
   doc.text(`CTC (Annual): ${payroll.ctcAnnual.toFixed(2)}`);
   doc.text(`Gross Salary: ${payroll.gross.toFixed(2)}`);
-  doc.text(`Monthly Incentive Accrual: ${Number(payroll.incentive?.monthlyIncentiveAccrual || 0).toFixed(2)}`);
-  doc.text(`Override Bonus: ${Number(payroll.incentive?.override || 0).toFixed(2)}`);
-  doc.text(`Net Salary: ${payroll.netSalary.toFixed(2)}`);
+  doc.text(`Incentive Cash (Approved/Paid): ${incentiveCash.toFixed(2)}`);
+  doc.text(`Incentive ESOP (Approved/Paid): ${incentiveEsop.toFixed(2)}`);
+  if (incentiveStatus) {
+    doc.text(`Incentive Status: ${incentiveStatus}`);
+  }
+  const baseNet = Number(payroll.gross || 0) - Number(payroll.deductions?.totalDeductions || 0);
+  const netWithIncentive = baseNet + incentiveCash;
+  doc.text(`Net Salary: ${netWithIncentive.toFixed(2)}`);
   doc.moveDown();
 
   const tableTop = doc.y + 10;
@@ -144,21 +169,25 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
   yPos += 20;
 
   doc.text('Monthly Incentive Accrual', 50, yPos);
-  doc.text(Number(payroll.incentive?.monthlyIncentiveAccrual || 0).toFixed(2), 250, yPos, { align: 'right' });
+  doc.text(Number(0).toFixed(2), 250, yPos, { align: 'right' });
   doc.text('TDS', 300, yPos);
   doc.text(Number(payroll.deductions?.monthlyTDS || 0).toFixed(2), 550, yPos, { align: 'right' });
   yPos += 20;
 
   doc.text('Override Bonus', 50, yPos);
-  doc.text(Number(payroll.incentive?.override || 0).toFixed(2), 250, yPos, { align: 'right' });
+  doc.text(Number(0).toFixed(2), 250, yPos, { align: 'right' });
   yPos += 30;
+
+  doc.text('Incentive Cash', 50, yPos);
+  doc.text(incentiveCash.toFixed(2), 250, yPos, { align: 'right' });
+  yPos += 20;
 
   doc.moveTo(50, yPos).lineTo(550, yPos).stroke();
   yPos += 10;
 
   doc.font('Helvetica-Bold');
   doc.text('Net In-Hand', 300, yPos);
-  doc.text(payroll.netSalary.toFixed(2), 550, yPos, { align: 'right' });
+  doc.text(netWithIncentive.toFixed(2), 550, yPos, { align: 'right' });
   yPos += 30;
 
   doc.font('Helvetica');
@@ -214,12 +243,12 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     incentiveBreakdown: {
       target: Number(target || 0),
       achievedNR: Number(achievedNR || 0),
-      achievementMultiple: Number(payroll.incentive?.achievementMultiple || 0),
-      quarterlyIncentive: Number(payroll.incentive?.quarterlyIncentive || 0),
-      monthlyIncentiveAccrual: Number(payroll.incentive?.monthlyIncentiveAccrual || 0),
-      esopValue: Number(payroll.incentive?.esop || 0),
-      cashValue: Number(payroll.incentive?.cashIncentive || 0),
-      overrideBonus: Number(payroll.incentive?.override || 0)
+      achievementMultiple: 0,
+      quarterlyIncentive: 0,
+      monthlyIncentiveAccrual: 0,
+      esopValue: incentiveEsop,
+      cashValue: incentiveCash,
+      overrideBonus: 0
     },
     deductions: {
       professionalTax: Number(payroll.deductions?.professionalTax || 0),
@@ -227,7 +256,7 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
       monthlyTDS: Number(payroll.deductions?.monthlyTDS || 0),
       totalDeductions: Number(payroll.deductions?.totalDeductions || 0)
     },
-    netSalary: payroll.netSalary,
+    netSalary: netWithIncentive,
     pdfUrl,
     generatedAt: new Date()
   };

@@ -14,11 +14,11 @@ router.use(protect);
 
 router.route('/')
   .get(authorize('admin', 'hr', 'manager'), getTeams)
-  .post(authorize('admin'), createTeam);
+  .post(authorize('admin', 'hr'), createTeam);
 
 router.route('/:id')
-  .get(getTeam)
-  .put(authorize('admin'), updateTeam)
-  .delete(authorize('admin'), deleteTeam);
+  .get(authorize('admin', 'hr', 'manager'), getTeam)
+  .put(authorize('admin', 'hr'), updateTeam)
+  .delete(authorize('admin', 'hr'), deleteTeam);
 
 module.exports = router;

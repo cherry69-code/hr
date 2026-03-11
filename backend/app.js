@@ -13,13 +13,6 @@ const connectDB = require('./config/db');
 // Load env vars
 dotenv.config();
 
-console.log('--- Environment Config Check ---');
-console.log('Cloudinary Cloud:', process.env.CLOUDINARY_CLOUD_NAME || 'MISSING');
-console.log('Cloudinary Key:', process.env.CLOUDINARY_API_KEY || 'MISSING');
-const secret = process.env.CLOUDINARY_API_SECRET || '';
-console.log('Cloudinary Secret:', secret ? (secret.startsWith('CLOUDINARY_URL') ? '❌ CORRUPTED (Starts with CLOUDINARY_URL)' : '✅ OK (Masked: ' + secret.substring(0, 3) + '...)') : 'MISSING');
-console.log('------------------------------');
-
 const app = express();
 
 // CORS Configuration (Must be first)
@@ -36,7 +29,9 @@ const corsOrigins = String(corsOriginsRaw)
   .map((o) => String(o).trim().replace(/[`"' \t\r\n]/g, ''))
   .filter(Boolean);
 
-console.log('Allowed CORS Origins:', corsOrigins);
+if (String(process.env.NODE_ENV).toLowerCase() === 'development') {
+  console.log('Allowed CORS Origins:', corsOrigins);
+}
 
 const corsOptions = {
   origin: true,
@@ -110,6 +105,7 @@ const geocode = require('./routes/geocodeRoutes');
 const incentives = require('./routes/incentiveRoutes');
 const biometric = require('./routes/biometricRoutes');
 const fieldAttendance = require('./routes/fieldAttendanceRoutes');
+const leaderboard = require('./routes/leaderboardRoutes');
 const errorHandler = require('./middlewares/errorMiddleware');
 
 app.use('/api/auth', auth);
@@ -131,6 +127,7 @@ app.use('/api/geocode', geocode);
 app.use('/api/incentives', incentives);
 app.use('/api/biometric', biometric);
 app.use('/api/field-attendance', fieldAttendance);
+app.use('/api/leaderboard', leaderboard);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

@@ -3,13 +3,7 @@ const User = require('../models/User');
 const Location = require('../models/Location');
 const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
-const cloudinary = require('cloudinary').v2;
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+const cloudinary = require('../config/cloudinary');
 
 // @desc    Mark attendance (Check-in)
 // @route   POST /api/attendance/checkin/:employeeId

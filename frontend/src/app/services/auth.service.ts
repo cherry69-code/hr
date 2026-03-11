@@ -20,13 +20,36 @@ export class AuthService {
     return this.currentUserSubject.value;
   }
 
+  private setCurrentUser(user: any) {
+    if (!user) {
+      this.currentUserSubject.next(null);
+      return;
+    }
+    const normalized = {
+      ...user,
+      id: user.id || user._id || user.userId
+    };
+    this.currentUserSubject.next(normalized);
+  }
+
+  refreshMe(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/me`).pipe(
+      tap((res: any) => {
+        if (res && res.data) {
+          this.setCurrentUser(res.data);
+        }
+      })
+    );
+  }
+
   constructor() {
     const token = localStorage.getItem('token');
     if (token) {
       try {
         const decoded: any = jwtDecode(token);
         if (decoded.exp * 1000 > Date.now()) {
-          this.currentUserSubject.next(decoded);
+          this.setCurrentUser(decoded);
+          this.refreshMe().subscribe({ next: () => {}, error: () => {} });
         } else {
           this.logout();
         }
@@ -42,7 +65,8 @@ export class AuthService {
         if (res && res.token) {
           localStorage.setItem('token', res.token);
           const decoded: any = jwtDecode(res.token);
-          this.currentUserSubject.next(decoded);
+          this.setCurrentUser(decoded);
+          this.refreshMe().subscribe({ next: () => {}, error: () => {} });
         }
       })
     );

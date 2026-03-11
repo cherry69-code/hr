@@ -1,6 +1,6 @@
 const Document = require('../models/Document');
 const User = require('../models/User');
-const cloudinary = require('cloudinary').v2;
+const cloudinary = require('../config/cloudinary');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
@@ -10,12 +10,6 @@ const asyncHandler = require('../middlewares/asyncHandler');
 const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
 const { getCompanyLogoBuffer } = require('../utils/branding');
 const { generateOfferLetterPdf, generateJoiningAgreementPdf, generateDocumentHtml } = require('../services/documentGenerator.service');
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
 // @desc    Generate and upload PDF
 // @route   POST /api/documents/generate/:type/:employeeId

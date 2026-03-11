@@ -21,14 +21,29 @@ export class IncentiveAnalyticsComponent implements OnInit {
 
   employees: any[] = [];
   incentives: any[] = [];
+  revenues: any[] = [];
   currentUser: any = null;
   loading = false;
 
-  form = {
+  calcForm = {
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear()
+  };
+
+  payoutForm = {
+    year: new Date().getFullYear(),
+    quarter: 1
+  };
+
+  revenueForm: any = {
     employeeId: '',
-    period: '',
-    achievedAmount: 0,
-    overrideBonus: 0
+    clientName: '',
+    projectName: '',
+    revenueAmount: 0,
+    invoiceRaised: true,
+    paymentCollected: true,
+    bookingDate: new Date().toISOString().slice(0, 10),
+    invoiceUrl: ''
   };
 
   // Bulk Calculation
@@ -39,7 +54,8 @@ export class IncentiveAnalyticsComponent implements OnInit {
   ngOnInit() {
     this.authService.currentUser$.subscribe((user: any) => this.currentUser = user);
     this.loadEmployees();
-    this.loadIncentives();
+    this.loadCalculations();
+    this.loadRevenue();
   }
 
   loadEmployees() {
@@ -76,62 +92,25 @@ export class IncentiveAnalyticsComponent implements OnInit {
   }
 
   async calculateBulk() {
-    if (!this.bulkPeriod) {
-      this.toast.error('Please enter a period for bulk calculation');
-      return;
-    }
-
-    this.loading = true;
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const item of this.bulkData) {
-        // Skip if 0 achieved?
-        // if (item.achievedAmount <= 0) continue;
-
-        try {
-            const payload = {
-                employeeId: item.employeeId,
-                period: this.bulkPeriod,
-                achievedAmount: item.achievedAmount,
-                overrideBonus: item.overrideBonus
-            };
-
-            await this.incentiveService.calculate(payload).toPromise();
-            successCount++;
-        } catch (err) {
-            console.error(err);
-            failCount++;
-        }
-    }
-
-    this.loading = false;
-    this.toast.success(`Processed: ${successCount} Success, ${failCount} Failed`);
-    this.loadIncentives();
-    this.showBulkMode = false;
+    this.toast.error('Bulk calculation is replaced by Monthly Calculation.');
   }
 
 
-  loadIncentives() {
-    this.incentiveService.getIncentives().subscribe({
+  loadCalculations() {
+    this.incentiveService.getCalculations({ month: this.calcForm.month, year: this.calcForm.year }).subscribe({
       next: (res: any) => this.incentives = res.data || [],
       error: () => this.toast.error('Failed to load incentives')
     });
   }
 
   calculate() {
-    if (!this.form.employeeId || !this.form.period || !this.form.achievedAmount) {
-      this.toast.error('Please fill all required fields');
-      return;
-    }
-
     this.loading = true;
-    this.incentiveService.calculate(this.form).subscribe({
+    this.incentiveService.calculateMonthly(this.calcForm.month, this.calcForm.year).subscribe({
       next: () => {
-        this.toast.success('Incentive calculated successfully');
+        this.toast.success('Monthly incentive calculated');
         this.loading = false;
-        this.loadIncentives();
-        this.resetForm();
+        this.loadCalculations();
+        this.loadRevenue();
       },
       error: (err) => {
         this.loading = false;
@@ -143,21 +122,64 @@ export class IncentiveAnalyticsComponent implements OnInit {
   approve(id: string) {
     if (!confirm('Are you sure you want to approve this incentive?')) return;
 
-    this.incentiveService.approveIncentive(id).subscribe({
+    this.incentiveService.approveCalculation(id).subscribe({
       next: () => {
         this.toast.success('Incentive approved');
-        this.loadIncentives();
+        this.loadCalculations();
       },
       error: (err) => this.toast.error(err.error?.error || 'Approval failed')
     });
   }
 
-  resetForm() {
-    this.form = {
-      employeeId: '',
-      period: '',
-      achievedAmount: 0,
-      overrideBonus: 0
-    };
+  loadRevenue() {
+    this.incentiveService.getRevenue({ month: this.calcForm.month, year: this.calcForm.year }).subscribe({
+      next: (res: any) => this.revenues = res.data || [],
+      error: () => this.revenues = []
+    });
+  }
+
+  addRevenue() {
+    if (!this.revenueForm.employeeId || !this.revenueForm.clientName || !this.revenueForm.projectName || !this.revenueForm.bookingDate) {
+      this.toast.error('Please fill revenue fields');
+      return;
+    }
+    this.loading = true;
+    this.incentiveService.createRevenue(this.revenueForm).subscribe({
+      next: () => {
+        this.loading = false;
+        this.toast.success('Revenue added');
+        this.loadRevenue();
+      },
+      error: (err) => {
+        this.loading = false;
+        this.toast.error(err.error?.error || 'Failed to add revenue');
+      }
+    });
+  }
+
+  deleteRevenue(id: string) {
+    if (!confirm('Delete revenue entry?')) return;
+    this.incentiveService.deleteRevenue(id).subscribe({
+      next: () => {
+        this.toast.success('Deleted');
+        this.loadRevenue();
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Delete failed')
+    });
+  }
+
+  payQuarterNow() {
+    this.loading = true;
+    this.incentiveService.payQuarter(this.payoutForm.year, this.payoutForm.quarter).subscribe({
+      next: (res: any) => {
+        this.loading = false;
+        this.toast.success(`Paid: ${res.data?.modified || 0}`);
+        this.loadCalculations();
+      },
+      error: (err) => {
+        this.loading = false;
+        this.toast.error(err.error?.error || 'Payout failed');
+      }
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, AfterViewInit } from '@angular/core';
+import { Component, OnInit, inject, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../services/auth.service';
@@ -23,7 +23,7 @@ import { environment } from '../../environments/environment';
     }
   `]
 })
-export class EmployeeHomeComponent implements OnInit, AfterViewInit {
+export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   private http = inject(HttpClient);
   public authService = inject(AuthService);
   private documentService = inject(DocumentService);
@@ -33,6 +33,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   currentDate = new Date();
   daysInMonth: any[] = [];
   attendanceRecords: any[] = [];
+  approvedLeaveDates = new Set<string>();
   teamAttendance: any[] = [];
   locations: any[] = [];
   map: any;
@@ -56,7 +57,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   };
 
   leaveSummary = {
-    optional: 0,
+    optional: 2,
     annual: 12,
     sick: 5,
     unpaid: 0,
@@ -64,10 +65,17 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
   };
 
   stats = {
-    avgWorkingHours: '08:42',
-    onTimeArrival: '95%',
-    averageTime: '09:15 AM'
+    avgWorkingHours: '00:00 Hrs',
+    onTimeArrival: '0%',
+    averageTime: '--:--'
   };
+
+  leaderboardTop: any[] = [];
+  myPerformance: any = null;
+  topPerformer: any = null;
+  weeklyTop: any[] = [];
+  myIncentive: any = null;
+  private leaderboardTimer: any = null;
 
   weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -113,12 +121,22 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
       this.loadAttendance();
       this.loadTeamSummary();
       this.loadLeaves();
+      this.loadLeaderboard();
+
+      this.leaderboardTimer = setInterval(() => this.loadLeaderboard(), 30000);
     }
   }
 
   ngAfterViewInit() {
     if (!this.user) return;
     this.loadLocations();
+  }
+
+  ngOnDestroy() {
+    if (this.leaderboardTimer) {
+      clearInterval(this.leaderboardTimer);
+      this.leaderboardTimer = null;
+    }
   }
 
   loadLocations() {
@@ -457,6 +475,11 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
       if (record) {
         day.status = record.status.toLowerCase(); // present, absent, late
       }
+      // If approved leave covers this day, mark as 'leave' unless explicitly present
+      const key = day.date.toDateString();
+      if (this.approvedLeaveDates.has(key) && day.status !== 'present') {
+        day.status = 'leave';
+      }
       // Keep existing status (weekend/absent) if no record found
       return day;
     });
@@ -513,17 +536,106 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit {
     });
   }
 
+  loadLeaderboard() {
+    const d = new Date();
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+
+    this.http.get(`${environment.apiUrl}/leaderboard/monthly?month=${month}&year=${year}&top=10`).subscribe({
+      next: (res: any) => {
+        this.leaderboardTop = res.data || [];
+        this.topPerformer = res.topPerformer || null;
+      },
+      error: () => {
+        this.leaderboardTop = [];
+        this.topPerformer = null;
+      }
+    });
+
+    this.http.get(`${environment.apiUrl}/leaderboard/me?month=${month}&year=${year}`).subscribe({
+      next: (res: any) => this.myPerformance = res.data || null,
+      error: () => this.myPerformance = null
+    });
+
+    this.http.get(`${environment.apiUrl}/incentives/calculations?month=${month}&year=${year}`).subscribe({
+      next: (res: any) => this.myIncentive = (res.data && res.data.length ? res.data[0] : null),
+      error: () => this.myIncentive = null
+    });
+
+    this.http.get(`${environment.apiUrl}/leaderboard/weekly?top=10`).subscribe({
+      next: (res: any) => this.weeklyTop = res.data || [],
+      error: () => this.weeklyTop = []
+    });
+  }
+
   loadLeaves() {
     this.http.get(`${environment.apiUrl}/leaves?employeeId=${this.user.id}`).subscribe({
       next: (res: any) => {
         const leaves = res.data;
-        const usedAnnual = leaves.filter((l: any) => l.leaveType === 'Paid Leave' && l.status === 'approved').length;
-        const usedCasual = leaves.filter((l: any) => l.leaveType === 'Casual Leave' && l.status === 'approved').length;
-        const usedSick = leaves.filter((l: any) => l.leaveType === 'Sick Leave' && l.status === 'approved').length;
+        const approved = (leaves || []).filter((l: any) => l && l.status === 'approved');
+        const now = new Date();
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        const yearEnd = new Date(now.getFullYear(), 11, 31);
+        yearStart.setHours(0, 0, 0, 0);
+        yearEnd.setHours(23, 59, 59, 999);
 
-        this.leaveSummary.annual = 12 - usedAnnual;
-        this.leaveSummary.optional = 10 - usedCasual;
-        this.leaveSummary.sick = 5 - usedSick;
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        monthStart.setHours(0, 0, 0, 0);
+        monthEnd.setHours(23, 59, 59, 999);
+
+        const countDays = (fromDate: any, toDate: any, rangeStart: Date, rangeEnd: Date) => {
+          const s = new Date(fromDate);
+          const e = new Date(toDate);
+          if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
+          s.setHours(0, 0, 0, 0);
+          e.setHours(0, 0, 0, 0);
+          const start = s.getTime() < rangeStart.getTime() ? new Date(rangeStart) : s;
+          const end = e.getTime() > rangeEnd.getTime() ? new Date(rangeEnd) : e;
+          start.setHours(0, 0, 0, 0);
+          end.setHours(0, 0, 0, 0);
+          if (start.getTime() > end.getTime()) return 0;
+          let days = 0;
+          const cur = new Date(start);
+          while (cur.getTime() <= end.getTime()) {
+            days += 1;
+            cur.setDate(cur.getDate() + 1);
+          }
+          return days;
+        };
+
+        const usedAnnualDays = approved
+          .filter((l: any) => l.leaveType === 'Paid Leave')
+          .reduce((sum: number, l: any) => sum + countDays(l.fromDate, l.toDate, yearStart, yearEnd), 0);
+
+        const usedSickDays = approved
+          .filter((l: any) => l.leaveType === 'Sick Leave')
+          .reduce((sum: number, l: any) => sum + countDays(l.fromDate, l.toDate, yearStart, yearEnd), 0);
+
+        const usedCasualDaysThisMonth = approved
+          .filter((l: any) => l.leaveType === 'Casual Leave')
+          .reduce((sum: number, l: any) => sum + countDays(l.fromDate, l.toDate, monthStart, monthEnd), 0);
+
+        this.leaveSummary.annual = Math.max(0, 12 - usedAnnualDays);
+        this.leaveSummary.sick = Math.max(0, 5 - usedSickDays);
+        this.leaveSummary.optional = Math.max(0, 2 - usedCasualDaysThisMonth);
+
+        // Build approved leave day set for calendar marking
+        this.approvedLeaveDates.clear();
+        leaves
+          .filter((l: any) => l.status === 'approved')
+          .forEach((l: any) => {
+            const start = new Date(l.fromDate);
+            const end = new Date(l.toDate);
+            const cur = new Date(start);
+            cur.setHours(0, 0, 0, 0);
+            end.setHours(0, 0, 0, 0);
+            while (cur.getTime() <= end.getTime()) {
+              this.approvedLeaveDates.add(cur.toDateString());
+              cur.setDate(cur.getDate() + 1);
+            }
+          });
+        this.mapAttendanceToCalendar();
       },
       error: (err) => this.toast.error(err.error?.error || 'Failed to load leaves')
     });

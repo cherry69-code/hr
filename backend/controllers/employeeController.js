@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const asyncHandler = require('../middlewares/asyncHandler');
 const sendEmail = require('../utils/sendEmail');
+const cloudinary = require('../config/cloudinary');
 
 // @desc    Get all employees
 // @route   GET /api/employees
@@ -236,6 +237,58 @@ exports.updateEmployee = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: safeEmployee });
 });
 
+// @desc    Update profile picture (Self or Admin/HR)
+// @route   PUT /api/employees/:id/profile-picture
+// @access  Private
+exports.updateProfilePicture = asyncHandler(async (req, res) => {
+  const targetId = String(req.params.id || '');
+  const requesterId = String(req.user.id || '');
+  const role = String(req.user.role || '');
+
+  if (!targetId) {
+    return res.status(400).json({ success: false, error: 'Employee ID is required' });
+  }
+
+  if (requesterId !== targetId && role !== 'admin' && role !== 'hr') {
+    return res.status(403).json({ success: false, error: 'Not authorized' });
+  }
+
+  const { file } = req.body || {};
+  if (!file) {
+    return res.status(400).json({ success: false, error: 'Profile image is required' });
+  }
+
+  const employee = await User.findById(targetId);
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  let uploadedUrl = '';
+  try {
+    const result = await cloudinary.uploader.upload(file, {
+      folder: 'profile_pictures',
+      resource_type: 'image',
+      public_id: `${employee.employeeId || employee._id}_${Date.now()}`
+    });
+    uploadedUrl = result.secure_url;
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Image upload failed' });
+  }
+
+  employee.profilePicture = uploadedUrl;
+  if (!employee.documents) employee.documents = {};
+  employee.documents.photo = { url: uploadedUrl, uploadedAt: Date.now() };
+  await employee.save();
+
+  const safeEmployee = await User.findById(employee._id)
+    .populate('departmentId')
+    .populate('reportingManagerId', 'fullName email')
+    .populate('teamId', 'name')
+    .lean();
+
+  return res.status(200).json({ success: true, data: safeEmployee });
+});
+
 // @desc    Delete employee
 // @route   DELETE /api/employees/:id
 // @access  Private/Admin
@@ -273,6 +326,7 @@ module.exports = {
   createEmployee: exports.createEmployee,
   getEmployee: exports.getEmployee,
   updateEmployee: exports.updateEmployee,
+  updateProfilePicture: exports.updateProfilePicture,
   deleteEmployee: exports.deleteEmployee,
   sendLetter: exports.sendLetter
 };

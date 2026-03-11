@@ -6,7 +6,8 @@ const {
   updateEmployee,
   deleteEmployee,
   getManagers,
-  sendLetter
+  sendLetter,
+  updateProfilePicture
 } = require('../controllers/employeeController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 
@@ -26,5 +27,7 @@ router.route('/:id')
   .get(getEmployee)
   .put(authorize('admin', 'hr'), updateEmployee)
   .delete(authorize('admin'), deleteEmployee);
+
+router.put('/:id/profile-picture', updateProfilePicture);
 
 module.exports = router;

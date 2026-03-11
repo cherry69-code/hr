@@ -14,6 +14,84 @@ exports.applyLeave = asyncHandler(async (req, res, next) => {
   
   if (!req.body.employeeId) req.body.employeeId = req.user.id;
 
+  const leaveType = String(req.body.leaveType || '').trim();
+  const fromDate = new Date(req.body.fromDate);
+  const toDate = new Date(req.body.toDate);
+
+  if (!leaveType) {
+    return res.status(400).json({ success: false, error: 'Leave type is required' });
+  }
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return res.status(400).json({ success: false, error: 'Invalid leave dates' });
+  }
+
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  if (start.getTime() > end.getTime()) {
+    return res.status(400).json({ success: false, error: 'From date cannot be after To date' });
+  }
+
+  const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const addDaysByMonth = (m, s, e) => {
+    const cur = new Date(s);
+    cur.setHours(0, 0, 0, 0);
+    const last = new Date(e);
+    last.setHours(0, 0, 0, 0);
+    while (cur.getTime() <= last.getTime()) {
+      const k = monthKey(cur);
+      m.set(k, (m.get(k) || 0) + 1);
+      cur.setDate(cur.getDate() + 1);
+    }
+  };
+
+  const requestedDaysByMonth = new Map();
+  addDaysByMonth(requestedDaysByMonth, start, end);
+
+  const firstMonthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastMonthEnd = new Date(end.getFullYear(), end.getMonth() + 1, 0);
+  lastMonthEnd.setHours(23, 59, 59, 999);
+
+  const existingLeaves = await Leave.find({
+    employeeId: req.body.employeeId,
+    status: { $in: ['pending', 'approved'] },
+    fromDate: { $lte: lastMonthEnd },
+    toDate: { $gte: firstMonthStart }
+  }).lean();
+
+  const usedTotalByMonth = new Map();
+  const usedCasualByMonth = new Map();
+  for (const l of existingLeaves) {
+    const ls = new Date(l.fromDate);
+    const le = new Date(l.toDate);
+    if (Number.isNaN(ls.getTime()) || Number.isNaN(le.getTime())) continue;
+    ls.setHours(0, 0, 0, 0);
+    le.setHours(0, 0, 0, 0);
+    const cur = new Date(ls);
+    while (cur.getTime() <= le.getTime()) {
+      const k = monthKey(cur);
+      usedTotalByMonth.set(k, (usedTotalByMonth.get(k) || 0) + 1);
+      if (String(l.leaveType) === 'Casual Leave') {
+        usedCasualByMonth.set(k, (usedCasualByMonth.get(k) || 0) + 1);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+
+  for (const [k, days] of requestedDaysByMonth.entries()) {
+    const totalUsed = usedTotalByMonth.get(k) || 0;
+    if (totalUsed + days > 3) {
+      return res.status(400).json({ success: false, error: 'Monthly leave limit exceeded (max 3 days)' });
+    }
+    if (leaveType === 'Casual Leave') {
+      const casualUsed = usedCasualByMonth.get(k) || 0;
+      if (casualUsed + days > 2) {
+        return res.status(400).json({ success: false, error: 'Optional leave limit exceeded (max 2 days per month)' });
+      }
+    }
+  }
+
   const leave = await Leave.create(req.body);
 
   // Notify Reporting Manager

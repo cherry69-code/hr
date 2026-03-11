@@ -3,18 +3,12 @@ const User = require('../models/User');
 const crypto = require('crypto');
 const asyncHandler = require('../middlewares/asyncHandler');
 const { generateFinalPdfWithSignatures, generateDocumentHtml } = require('../services/documentGenerator.service'); // We'll update this service
-const cloudinary = require('cloudinary').v2;
+const cloudinary = require('../config/cloudinary');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { URL } = require('url');
 const AuditLog = require('../models/AuditLog');
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
 const getBackendPublicBaseUrl = () => {
   const base = process.env.BACKEND_URL || process.env.API_BASE_URL || 'http://localhost:5000';
@@ -218,29 +212,21 @@ exports.signDocument = asyncHandler(async (req, res, next) => {
     const { token } = req.params;
     const { signature } = req.body; // Base64 signature
 
-    console.log('>>> SIGNING REQUEST RECEIVED');
-    console.log('Token:', token);
-    console.log('Signature length:', signature ? signature.length : 'MISSING');
-
     if (!signature) {
-      console.error('ERROR: Signature is required');
       return res.status(400).json({ success: false, error: 'Signature is required' });
     }
 
     const document = await Document.findOne({ token }).populate('employeeId'); // Populate employee
 
     if (!document) {
-      console.error('ERROR: Document not found for token:', token);
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
     if (document.tokenExpiry && document.tokenExpiry < Date.now()) {
-      console.error('ERROR: Token expired');
       return res.status(400).json({ success: false, error: 'Link has expired' });
     }
 
     if (document.status !== 'Sent') {
-      console.error('ERROR: Invalid status:', document.status);
       return res.status(400).json({ success: false, error: 'Document already signed or completed' });
     }
 
@@ -252,7 +238,6 @@ exports.signDocument = asyncHandler(async (req, res, next) => {
     document.status = 'Completed'; // Employee is now the LAST signer
 
     await document.save();
-    console.log('>>> SIGNATURE SAVED SUCCESSFULLY. New Status:', document.status);
 
     // --- FINALIZE DOCUMENT (GENERATE PDF) ---
     // Since HR has already signed (during creation), and now Employee signed, we can generate the final PDF immediately.

@@ -27,6 +27,38 @@ export class IncentiveService {
     return this.http.put(`${this.apiUrl}/incentives/${id}/approve`, {});
   }
 
+  createRevenue(data: any): Observable<any> {
+    return this.http.post(`${this.apiUrl}/incentives/revenue`, data);
+  }
+
+  getRevenue(params?: any): Observable<any> {
+    return this.http.get(`${this.apiUrl}/incentives/revenue`, { params });
+  }
+
+  deleteRevenue(id: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/incentives/revenue/${id}`);
+  }
+
+  calculateMonthly(month: number, year: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/incentives/calculate-monthly`, { month, year });
+  }
+
+  getCalculations(params?: any): Observable<any> {
+    return this.http.get(`${this.apiUrl}/incentives/calculations`, { params });
+  }
+
+  approveCalculation(id: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/incentives/calculations/${id}/approve`, {});
+  }
+
+  payQuarter(year: number, quarter: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/incentives/payout/quarter`, { year, quarter });
+  }
+
+  getMySummaryV2(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/incentives/my-summary-v2`);
+  }
+
   // Slabs
   getSlabs(): Observable<any> {
     return this.http.get(`${this.apiUrl}/slabs`);

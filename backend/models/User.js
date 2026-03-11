@@ -35,6 +35,10 @@ const UserSchema = new mongoose.Schema({
       'Please add a valid personal email'
     ]
   },
+  profilePicture: {
+    type: String,
+    trim: true
+  },
   password: {
     type: String,
     required: [true, 'Please add a password'],
