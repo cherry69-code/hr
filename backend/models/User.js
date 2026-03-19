@@ -6,7 +6,9 @@ const crypto = require('crypto');
 const UserSchema = new mongoose.Schema({
   employeeId: {
     type: String,
-    unique: true
+    unique: true,
+    sparse: true,
+    trim: true
   },
   fullName: {
     type: String,
@@ -181,12 +183,6 @@ UserSchema.pre('save', async function (next) {
   if (this.isModified('password')) {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
-  }
-
-  if (this.isNew && !this.employeeId) {
-    const count = await this.constructor.countDocuments();
-    const sequence = (count + 1).toString().padStart(3, '0');
-    this.employeeId = `NINJA${sequence}`;
   }
   next();
 });

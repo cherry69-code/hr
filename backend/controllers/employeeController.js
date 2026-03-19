@@ -81,7 +81,17 @@ exports.getManagers = asyncHandler(async (req, res, next) => {
 // @route   POST /api/employees
 // @access  Private/Admin
 exports.createEmployee = asyncHandler(async (req, res, next) => {
-  const { fullName, email, password, role, ...hrData } = req.body;
+  const { fullName, email, password, role, employeeId, ...hrData } = req.body;
+
+  const employeeCode = String(employeeId || '').trim();
+  if (!employeeCode) {
+    return res.status(400).json({ success: false, error: 'Employee code is required' });
+  }
+
+  const existingCode = await User.findOne({ employeeId: employeeCode }).select('_id').lean();
+  if (existingCode) {
+    return res.status(400).json({ success: false, error: 'Employee code already exists' });
+  }
 
   // Prevent HR from creating Admins
   if (req.user.role === 'hr' && role === 'admin') {
@@ -94,6 +104,7 @@ exports.createEmployee = asyncHandler(async (req, res, next) => {
     fullName,
     email,
     password: tempPassword,
+    employeeId: employeeCode,
     role: role || 'employee',
     status: 'DOCUMENT_PENDING',
     ...hrData
@@ -235,6 +246,18 @@ exports.updateEmployee = asyncHandler(async (req, res, next) => {
   }
 
   const updates = { ...req.body };
+
+  if (updates.employeeId !== undefined) {
+    const employeeCode = String(updates.employeeId || '').trim();
+    if (!employeeCode) {
+      return res.status(400).json({ success: false, error: 'Employee code is required' });
+    }
+    const existingCode = await User.findOne({ employeeId: employeeCode, _id: { $ne: employee._id } }).select('_id').lean();
+    if (existingCode) {
+      return res.status(400).json({ success: false, error: 'Employee code already exists' });
+    }
+    updates.employeeId = employeeCode;
+  }
   
   const cleanObject = (obj) => {
     Object.keys(obj).forEach(key => {

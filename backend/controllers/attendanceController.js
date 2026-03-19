@@ -9,11 +9,37 @@ const cloudinary = require('../config/cloudinary');
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
 exports.checkIn = asyncHandler(async (req, res, next) => {
-  const { latitude, longitude, offsiteReason, photoBase64, selectedLocationId } = req.body;
+  const { latitude, longitude, gpsAccuracyMeters, photoBase64, faceVerified, selectedLocationId } = req.body || {};
   const employeeId = req.params.employeeId;
 
-  if (!latitude || !longitude) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  const acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ success: false, error: 'Please provide location coordinates' });
+  }
+
+  if (acc !== null && (!Number.isFinite(acc) || acc >= 50)) {
+    return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
+  }
+
+  if (!photoBase64 || typeof photoBase64 !== 'string') {
+    return res.status(400).json({ success: false, error: 'Selfie is required' });
+  }
+
+  const mimeMatch = photoBase64.match(/^data:(image\/(jpeg|jpg|png));base64,/);
+  if (!mimeMatch) {
+    return res.status(400).json({ success: false, error: 'Invalid selfie format. Only JPG/PNG allowed.' });
+  }
+  const base64Data = photoBase64.replace(/^data:.+;base64,/, '');
+  const approxBytes = Math.floor(base64Data.length * 0.75);
+  if (approxBytes > 3 * 1024 * 1024) {
+    return res.status(400).json({ success: false, error: 'Selfie too large (max 3MB)' });
+  }
+
+  if (faceVerified === false) {
+    return res.status(400).json({ success: false, error: 'Face verification failed' });
   }
 
   // 1. Fetch employee
@@ -54,7 +80,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 
   const STRICT_RADIUS = 20; // Enforced radius
   for (const loc of locations) {
-    const distance = getDistance(latitude, longitude, loc.latitude, loc.longitude);
+    const distance = getDistance(lat, lng, loc.latitude, loc.longitude);
     const radius = STRICT_RADIUS;
     
     if (distance <= radius) {
@@ -86,7 +112,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   if (selectedLocationId) {
     overrideLocation = locations.find(l => String(l._id) === String(selectedLocationId)) || null;
     if (overrideLocation) {
-      best = { location: overrideLocation, distance: getDistance(latitude, longitude, overrideLocation.latitude, overrideLocation.longitude) };
+      best = { location: overrideLocation, distance: getDistance(lat, lng, overrideLocation.latitude, overrideLocation.longitude) };
     }
   }
 
@@ -116,18 +142,17 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     status = 'Weekly Off Work'; // Or keep 'Present' / 'Overtime'
   }
 
-  // Optional selfie upload when offsite
   let photoUrl = '';
-  if (!locationValidated && offsiteReason && photoBase64) {
-    try {
-      const uploaded = await cloudinary.uploader.upload(photoBase64, {
-        folder: 'attendance/selfies',
-        resource_type: 'image'
-      });
-      photoUrl = uploaded.secure_url;
-    } catch (e) {
-      // continue without photo
-    }
+  try {
+    const uploaded = await cloudinary.uploader.upload(photoBase64, {
+      folder: 'attendance/office',
+      resource_type: 'image',
+      type: 'private',
+      public_id: `${employee.employeeId || employee._id}_${Date.now()}`
+    });
+    photoUrl = uploaded.secure_url || '';
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Selfie upload failed' });
   }
 
   // 4. Create Attendance Record
@@ -135,15 +160,17 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     employeeId: employee._id,
     date: now,
     checkInTime: now,
-    latitude,
-    longitude,
+    latitude: lat,
+    longitude: lng,
+    gpsAccuracyMeters: acc !== null ? acc : undefined,
     locationId: best.location._id, // Store nearest or explicitly selected location
     locationName: locationValidated ? best.location.name : `Remote (Nearest: ${best.location.name})`,
     status,
     locationValidated,
     insideRadius: locationValidated,
-    offsiteReason: offsiteReason || '',
-    photoUrl
+    photoUrl,
+    faceVerified: faceVerified !== undefined ? Boolean(faceVerified) : true,
+    source: 'OFFICE_FACE_WEB'
   });
 
   res.status(201).json({ success: true, data: attendance });

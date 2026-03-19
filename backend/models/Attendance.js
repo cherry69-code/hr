@@ -15,6 +15,7 @@ const AttendanceSchema = new mongoose.Schema({
   checkOutTime: Date,
   latitude: Number, // legacy: check-in latitude
   longitude: Number, // legacy: check-in longitude
+  gpsAccuracyMeters: Number,
   checkOutLatitude: Number,
   checkOutLongitude: Number,
   locationId: {
@@ -37,6 +38,10 @@ const AttendanceSchema = new mongoose.Schema({
   photoUrl: {
     type: String,
     trim: true
+  },
+  faceVerified: {
+    type: Boolean,
+    default: false
   },
   source: {
     type: String,
