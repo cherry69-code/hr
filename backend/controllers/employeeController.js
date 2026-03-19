@@ -38,6 +38,13 @@ exports.getEmployees = asyncHandler(async (req, res, next) => {
     // We'll keep it restricted to Admin/HR as per original annotation, but let's see route config.
   }
 
+  if (req.query.teamId) {
+    const teamId = String(req.query.teamId || '').trim();
+    if (teamId.match(/^[0-9a-fA-F]{24}$/)) {
+      query.teamId = teamId;
+    }
+  }
+
   // Pagination
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 100; // Default 100 to avoid breaking UI immediately
@@ -48,6 +55,7 @@ exports.getEmployees = asyncHandler(async (req, res, next) => {
   const employees = await User.find(query)
     .populate('departmentId')
     .populate('reportingManagerId', 'fullName email')
+    .populate('teamId', 'name')
     .sort({ createdAt: -1 }) // Sort by newest
     .skip(startIndex)
     .limit(limit)
@@ -338,14 +346,14 @@ exports.activateEmployee = asyncHandler(async (req, res) => {
   }
 
   const offer = user.documents?.offerLetter;
-  const join = user.documents?.joiningAgreement;
+  const join = user.documents?.joiningLetter;
   const hasOffer = Boolean(offer && (offer.publicId || offer.url));
-  const hasJoiningAgreement = Boolean(join && (join.publicId || join.url));
+  const hasJoiningLetter = Boolean(join && (join.publicId || join.url));
 
-  if (!hasOffer || !hasJoiningAgreement) {
+  if (!hasOffer || !hasJoiningLetter) {
     return res.status(400).json({
       success: false,
-      error: 'Offer letter and joining agreement must be uploaded before activation'
+      error: 'Offer letter and joining letter must be uploaded before activation'
     });
   }
 

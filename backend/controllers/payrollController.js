@@ -92,6 +92,55 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: e.message || 'Payroll calculation failed' });
   }
 
+  const startOfMonth = new Date(y, m - 1, 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endDay = new Date(y, m, 0);
+  endDay.setHours(0, 0, 0, 0);
+  const endOfMonth = new Date(endDay);
+  endOfMonth.setHours(23, 59, 59, 999);
+  const daysInMonth = endDay.getDate();
+
+  const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+  const scale = (v, factor) => round2(Number(v || 0) * factor);
+
+  let eligibleDays = daysInMonth;
+  const jd = employee.joiningDate ? new Date(employee.joiningDate) : null;
+  if (jd && !Number.isNaN(jd.getTime())) {
+    const joinStart = new Date(jd);
+    joinStart.setHours(0, 0, 0, 0);
+    if (joinStart.getTime() > endDay.getTime()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Employee joining date is after the selected payroll month'
+      });
+    }
+    const effectiveStart = joinStart.getTime() > startOfMonth.getTime() ? joinStart : startOfMonth;
+    eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  }
+
+  const prorationFactor = daysInMonth > 0 ? eligibleDays / daysInMonth : 1;
+  if (prorationFactor > 0 && prorationFactor < 1) {
+    payroll = {
+      ...payroll,
+      ctcMonthly: scale(payroll.ctcMonthly, prorationFactor),
+      basic: scale(payroll.basic, prorationFactor),
+      hra: scale(payroll.hra, prorationFactor),
+      conveyance: scale(payroll.conveyance, prorationFactor),
+      specialAllowance: scale(payroll.specialAllowance, prorationFactor),
+      employerPF: scale(payroll.employerPF, prorationFactor),
+      employeePF: scale(payroll.employeePF, prorationFactor),
+      gratuity: scale(payroll.gratuity, prorationFactor),
+      gross: scale(payroll.gross, prorationFactor),
+      deductions: {
+        ...(payroll.deductions || {}),
+        employeePF: scale(payroll.deductions?.employeePF, prorationFactor),
+        professionalTax: scale(payroll.deductions?.professionalTax, prorationFactor),
+        monthlyTDS: scale(payroll.deductions?.monthlyTDS, prorationFactor),
+        totalDeductions: scale(payroll.deductions?.totalDeductions, prorationFactor)
+      }
+    };
+  }
+
   const monthName = new Date(y, m - 1).toLocaleString('default', { month: 'long' });
 
   let incentiveCash = 0;
@@ -132,6 +181,9 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
   doc.moveDown();
 
   doc.text(`CTC (Annual): ${payroll.ctcAnnual.toFixed(2)}`);
+  if (prorationFactor > 0 && prorationFactor < 1) {
+    doc.text(`Proration: ${eligibleDays}/${daysInMonth} days (Joining Date: ${new Date(employee.joiningDate).toLocaleDateString()})`);
+  }
   doc.text(`Gross Salary: ${payroll.gross.toFixed(2)}`);
   doc.text(`Incentive Cash (Approved/Paid): ${incentiveCash.toFixed(2)}`);
   doc.text(`Incentive ESOP (Approved/Paid): ${incentiveEsop.toFixed(2)}`);
@@ -231,6 +283,11 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     status: 'Generated',
     ctcAnnual: payroll.ctcAnnual,
     ctcMonthly: payroll.ctcMonthly,
+    attendance: {
+      totalWorkingDays: Number(eligibleDays || 0),
+      presentDays: 0,
+      unpaidLeaveDays: 0
+    },
     earnings: {
       basic: payroll.basic,
       hra: payroll.hra,

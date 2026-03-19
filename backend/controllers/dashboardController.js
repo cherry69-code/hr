@@ -44,7 +44,7 @@ exports.getStats = asyncHandler(async (req, res, next) => {
         $lte: new Date(new Date().setHours(23, 59, 59, 999)) 
       }
     }),
-    User.find({ role: 'employee', status: 'active' }).select('salary.ctc').lean()
+    User.find({ role: 'employee', status: 'active' }).select('salary.ctc joiningDate').lean()
   ]);
 
   const absentToday = Math.max(0, totalEmployees - presentToday);
@@ -52,9 +52,32 @@ exports.getStats = asyncHandler(async (req, res, next) => {
   // Total Payroll (monthly) in Lakhs, computed from employees' annual CTC
   let monthlyTotal = 0;
   const { decryptField } = require('../utils/fieldCrypto');
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthEndDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  monthEndDay.setHours(0, 0, 0, 0);
+  const daysInMonth = monthEndDay.getDate();
   for (const e of employees) {
     const annual = Number(decryptField(e?.salary?.ctc ?? 0) || 0);
-    monthlyTotal += annual / 12;
+    const monthly = annual / 12;
+
+    let factor = 1;
+    if (e?.joiningDate) {
+      const jd = new Date(e.joiningDate);
+      if (!Number.isNaN(jd.getTime())) {
+        const joinStart = new Date(jd);
+        joinStart.setHours(0, 0, 0, 0);
+        if (joinStart.getTime() > monthEndDay.getTime()) {
+          factor = 0;
+        } else if (joinStart.getTime() > monthStart.getTime()) {
+          const eligibleDays = daysInMonth - joinStart.getDate() + 1;
+          factor = daysInMonth > 0 ? eligibleDays / daysInMonth : 1;
+        }
+      }
+    }
+
+    monthlyTotal += monthly * factor;
   }
   const totalPayrollL = Math.round((monthlyTotal / 100000) * 100) / 100; // round to 2 decimals
 

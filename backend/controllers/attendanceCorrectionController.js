@@ -14,11 +14,42 @@ const recalculatePayrollSummary = async (employeeId, date) => {
   
   const startOfMonth = new Date(year, month - 1, 1);
   const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endDay = new Date(year, month, 0);
+  endDay.setHours(0, 0, 0, 0);
+
+  const employee = await User.findById(employeeId).select('salary joiningDate').lean();
+
+  let effectiveStart = new Date(startOfMonth);
+  const jd = employee?.joiningDate ? new Date(employee.joiningDate) : null;
+  if (jd && !Number.isNaN(jd.getTime())) {
+    const joinStart = new Date(jd);
+    joinStart.setHours(0, 0, 0, 0);
+    if (joinStart.getTime() > endDay.getTime()) {
+      await PayrollAttendanceSummary.findOneAndUpdate(
+        { employeeId, month, year },
+        {
+          totalPresentDays: 0,
+          totalHalfDays: 0,
+          totalLopDays: 0,
+          totalAbsentDays: 0,
+          calculatedWorkDays: 0,
+          salaryDeduction: 0,
+          updatedAt: Date.now()
+        },
+        { upsert: true, new: true }
+      );
+      return;
+    }
+    if (joinStart.getTime() > effectiveStart.getTime()) {
+      effectiveStart = joinStart;
+    }
+  }
 
   // 1. Fetch attendance records for the month
   const records = await Attendance.find({
     employeeId,
-    date: { $gte: startOfMonth, $lte: endOfMonth }
+    date: { $gte: effectiveStart, $lte: endOfMonth }
   });
 
   // 2. Count statuses
@@ -46,13 +77,19 @@ const recalculatePayrollSummary = async (employeeId, date) => {
   // Salary Deduction Logic
   // Assuming 30 days or actual days in month?
   // Usually salary is fixed monthly. Deduction is per day LOP/Absent.
-  const employee = await User.findById(employeeId).select('salary').lean();
-  const annualCTC = employee?.salary?.ctc || 0;
+  let annualCTC = Number(employee?.salary?.ctc || 0);
+  try {
+    const { decryptField } = require('../utils/fieldCrypto');
+    annualCTC = Number(decryptField(employee?.salary?.ctc ?? 0) || 0);
+  } catch {}
   const monthlySalary = annualCTC / 12;
   
   // Total days in month for per-day calculation
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const salaryPerDay = daysInMonth > 0 ? (monthlySalary / daysInMonth) : 0;
+  const daysInMonth = endDay.getDate();
+  const eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const factor = daysInMonth > 0 ? eligibleDays / daysInMonth : 1;
+  const baseMonthly = monthlySalary * factor;
+  const salaryPerDay = eligibleDays > 0 ? (baseMonthly / eligibleDays) : 0;
   
   const deductionDays = lop + absent + (halfDay * 0.5);
   const salaryDeduction = Math.round(deductionDays * salaryPerDay);
