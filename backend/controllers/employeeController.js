@@ -323,6 +323,59 @@ exports.updateEmployee = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: safeEmployee });
 });
 
+// @desc    Manually activate employee (after manual document uploads)
+// @route   POST /api/employees/:id/activate
+// @access  Private/Admin/HR
+exports.activateEmployee = asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!id) return res.status(400).json({ success: false, error: 'Employee ID is required' });
+
+  const user = await User.findById(id);
+  if (!user) return res.status(404).json({ success: false, error: 'Employee not found' });
+
+  if (!user.joiningDate || Number.isNaN(new Date(user.joiningDate).getTime())) {
+    return res.status(400).json({ success: false, error: 'Joining date is required before activation' });
+  }
+
+  const offer = user.documents?.offerLetter;
+  const join = user.documents?.joiningAgreement;
+  const hasOffer = Boolean(offer && (offer.publicId || offer.url));
+  const hasJoiningAgreement = Boolean(join && (join.publicId || join.url));
+
+  if (!hasOffer || !hasJoiningAgreement) {
+    return res.status(400).json({
+      success: false,
+      error: 'Offer letter and joining agreement must be uploaded before activation'
+    });
+  }
+
+  user.status = 'active';
+  await user.save();
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+  const loginUrl = `${frontendUrl}/login`;
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'Welcome to PropNinja - Account Activated',
+      html: `
+        <p>Congratulations! Your onboarding is complete.</p>
+        <p>Your account is now ACTIVE.</p>
+        <p>Login here: <a href="${loginUrl}">${loginUrl}</a></p>
+        <p>Email: ${user.email}</p>
+      `
+    });
+  } catch {}
+
+  const safeEmployee = await User.findById(user._id)
+    .populate('departmentId')
+    .populate('reportingManagerId', 'fullName email')
+    .populate('teamId', 'name')
+    .lean();
+
+  return res.status(200).json({ success: true, data: safeEmployee });
+});
+
 // @desc    Update profile picture (Self or Admin/HR)
 // @route   PUT /api/employees/:id/profile-picture
 // @access  Private
@@ -412,6 +465,7 @@ module.exports = {
   createEmployee: exports.createEmployee,
   getEmployee: exports.getEmployee,
   updateEmployee: exports.updateEmployee,
+  activateEmployee: exports.activateEmployee,
   updateProfilePicture: exports.updateProfilePicture,
   deleteEmployee: exports.deleteEmployee,
   sendLetter: exports.sendLetter

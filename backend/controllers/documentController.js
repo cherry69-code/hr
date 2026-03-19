@@ -293,6 +293,32 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Please provide employeeId, type, and file' });
   }
 
+  const inputType = String(type || '').trim();
+  const normalizeType = (t) => {
+    const key = String(t || '').trim();
+    if (!key) return null;
+    const map = new Map([
+      ['aadhar', { docType: 'aadhar', userKey: 'aadhar' }],
+      ['pan', { docType: 'pan', userKey: 'pan' }],
+      ['degreeCertificate', { docType: 'degreeCertificate', userKey: 'degreeCertificate' }],
+      ['photo', { docType: 'photo', userKey: 'photo' }],
+      ['offer_letter', { docType: 'offer_letter', userKey: 'offerLetter' }],
+      ['offerLetter', { docType: 'offer_letter', userKey: 'offerLetter' }],
+      ['joining_letter', { docType: 'joining_letter', userKey: 'joiningLetter' }],
+      ['joiningLetter', { docType: 'joining_letter', userKey: 'joiningLetter' }],
+      ['joining_agreement', { docType: 'joining_agreement', userKey: 'joiningAgreement' }],
+      ['joiningAgreement', { docType: 'joining_agreement', userKey: 'joiningAgreement' }],
+      ['resume', { docType: 'resume', userKey: null }],
+      ['others', { docType: 'others', userKey: null }]
+    ]);
+    return map.get(key) || null;
+  };
+
+  const normalized = normalizeType(inputType);
+  if (!normalized) {
+    return res.status(400).json({ success: false, error: 'Invalid document type' });
+  }
+
   // Validate Employee ID format
   if (!employeeId.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ success: false, error: 'Invalid Employee ID format' });
@@ -334,31 +360,33 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   }
 
   // Update User model directly for standard docs
-  const updateField = {};
-  // Map frontend types to schema keys if needed, but they should match
-  // Schema keys: aadhar, pan, degreeCertificate, photo, offerLetter, joiningLetter
-  
-  // Ensure we update the nested field correctly
-  updateField[`documents.${type}`] = {
-    url: '',
-    uploadedAt: Date.now(),
-    publicId: result.public_id,
-    resourceType: result.resource_type,
-    format: result.format,
-    deliveryType: result.type,
-    version: result.version
-  };
-
-  const user = await User.findByIdAndUpdate(employeeId, {
-    $set: updateField
-  }, { new: true });
+  let user = null;
+  if (normalized.userKey) {
+    const updateField = {};
+    updateField[`documents.${normalized.userKey}`] = {
+      url: '',
+      uploadedAt: Date.now(),
+      publicId: result.public_id,
+      resourceType: result.resource_type,
+      format: result.format,
+      deliveryType: result.type,
+      version: result.version
+    };
+    user = await User.findByIdAndUpdate(
+      employeeId,
+      { $set: updateField },
+      { new: true }
+    );
+  } else {
+    user = await User.findById(employeeId).lean();
+  }
 
   await Document.findOneAndUpdate(
-    { employeeId, type },
+    { employeeId, type: normalized.docType },
     {
       $set: {
         employeeId,
-        type,
+        type: normalized.docType,
         url: '',
         storage: {
           provider: 'cloudinary',
@@ -373,6 +401,10 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).catch(() => {});
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
 
   // Check if all required documents are present
   const docs = user.documents || {};

@@ -105,6 +105,21 @@ exports.login = asyncHandler(async (req, res, next) => {
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
   }
 
+  if (String(user.status || '').toLowerCase() === 'active' && user.joiningDate) {
+    const jd = new Date(user.joiningDate);
+    if (!Number.isNaN(jd.getTime())) {
+      const now = new Date();
+      const joinStart = new Date(jd);
+      joinStart.setHours(0, 0, 0, 0);
+      if (now.getTime() < joinStart.getTime()) {
+        return res.status(403).json({
+          success: false,
+          error: `Your account will be active from ${joinStart.toLocaleDateString()}.`
+        });
+      }
+    }
+  }
+
   if (user.loginAttempts || user.lockUntil) {
     user.loginAttempts = 0;
     user.lockUntil = undefined;
