@@ -76,16 +76,14 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   
   let best = null;
   let withinRangeOfAny = false;
-  let validLocation = null;
 
-  const STRICT_RADIUS = 20; // Enforced radius
+  const STRICT_RADIUS = 100; // Enforced radius
   for (const loc of locations) {
     const distance = getDistance(lat, lng, loc.latitude, loc.longitude);
     const radius = STRICT_RADIUS;
     
     if (distance <= radius) {
       withinRangeOfAny = true;
-      validLocation = loc;
       best = { location: loc, distance }; // Found a valid one, we can break or keep looking for closer? 
       // Usually first match is enough or closest match. Let's find closest match anyway for reporting.
     }
@@ -95,17 +93,12 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     }
   }
 
-  const allowedRadius = STRICT_RADIUS;
   const day = new Date().getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   
-  // Tuesday (2) to Friday (5) -> Remote Allowed
-  // Saturday (6), Sunday (0) -> On-Site Required
-  // Monday (1) -> Weekly Off
-  const isRemoteAllowed = [2, 3, 4, 5].includes(day);
   const isWeeklyOff = day === 1;
+  const isBiometricOnly = [2, 3, 4, 5].includes(day);
 
   let locationValidated = false;
-  const isOnSiteRequired = [0, 6].includes(day); 
 
   // If HR explicitly selected a location for off-site mapping, honor it
   let overrideLocation = null;
@@ -119,14 +112,17 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   if (withinRangeOfAny) {
     locationValidated = true; // Within range of at least one office
   } else {
-    // New policy: Off-site or any check-in allowed ONLY within 20m of approved locations
+    // New policy: Off-site or any check-in allowed ONLY within 100m of approved locations
     return res.status(400).json({
       success: false,
-      error: `Check-in Failed: Allowed only within 20m of approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
+      error: `Check-in Failed: Allowed only within 100m of approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
     });
   }
   
   // If remote allowed (Tue-Fri) OR it's Monday -> Proceed.
+  if (isBiometricOnly) {
+    return res.status(400).json({ success: false, error: 'Biometric attendance is mandatory on Tue-Fri' });
+  }
 
   // 3. Status Logic (Half Day vs Present)
   // Max Login Time: 10:00 AM
@@ -135,9 +131,9 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   loginThreshold.setHours(10, 0, 0, 0);
 
   let status = 'Present';
-  if (now > loginThreshold) {
-    status = 'Half Day';
-  }
+  const lateFlag = now.getTime() > loginThreshold.getTime();
+  const lateMinutes = lateFlag ? Math.floor((now.getTime() - loginThreshold.getTime()) / (1000 * 60)) : 0;
+  if (lateFlag) status = 'Half Day';
   if (isWeeklyOff) {
     status = 'Weekly Off Work'; // Or keep 'Present' / 'Overtime'
   }
@@ -160,6 +156,9 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     employeeId: employee._id,
     date: now,
     checkInTime: now,
+    workingMinutes: 0,
+    lateMinutes,
+    lateFlag,
     latitude: lat,
     longitude: lng,
     gpsAccuracyMeters: acc !== null ? acc : undefined,
@@ -205,33 +204,30 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   
   // Calculate Duration
   const durationMs = checkOutTime - new Date(attendance.checkInTime);
-  const durationHours = durationMs / (1000 * 60 * 60);
-
-  // Check Half-Day Logic for Checkout
-  // Condition 1: Login > 10:00 AM (Already handled in Check-in)
-  // Condition 2: Logout < 7:00 PM (19:00)
-  // Condition 3: Total duration < 9 hours (optional check, usually implied by times)
-  
-  const logoutThreshold = new Date();
-  logoutThreshold.setHours(19, 0, 0, 0); // 7 PM
-
-  // If already Half Day (due to late login), keep it.
-  // Else if logout is early (< 7 PM), mark as Half Day.
-  // BUT: If they update check-out and it's now > 7 PM, should we revert to Present?
-  // Yes, recalculate status if it was only Half Day due to early logout.
-  // If it was Half Day due to late login, it stays Half Day.
 
   const loginThreshold = new Date(attendance.date);
   loginThreshold.setHours(10, 0, 0, 0);
-  const isLateLogin = new Date(attendance.checkInTime) > loginThreshold;
+  const checkInTime = new Date(attendance.checkInTime);
+
+  const lateFlag = checkInTime.getTime() > loginThreshold.getTime();
+  const lateMinutes = lateFlag ? Math.floor((checkInTime.getTime() - loginThreshold.getTime()) / (1000 * 60)) : 0;
+
+  const workingMinutes = Math.max(0, Math.floor(durationMs / (1000 * 60)));
+  const shiftEnd = new Date(attendance.date);
+  shiftEnd.setHours(19, 0, 0, 0);
+  const earlyExitMinutes = Math.max(0, Math.floor((shiftEnd.getTime() - checkOutTime.getTime()) / (1000 * 60)));
+
+  attendance.workingMinutes = workingMinutes;
+  attendance.lateFlag = lateFlag;
+  attendance.lateMinutes = lateMinutes;
+  attendance.earlyExitMinutes = earlyExitMinutes;
 
   if (attendance.status !== 'Weekly Off Work') {
-    if (isLateLogin) {
+    if (lateFlag) {
       attendance.status = 'Half Day';
-    } else if (checkOutTime < logoutThreshold) {
+    } else if (workingMinutes < 360) {
       attendance.status = 'Half Day';
     } else {
-      // Login on time AND Logout on time
       attendance.status = 'Present';
     }
   }
@@ -249,15 +245,38 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
   const startOfDay = new Date(today.setHours(0, 0, 0, 0));
   const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
+  const isAdmin = req.user.role === 'admin';
+  const isHr = req.user.role === 'hr';
+  const isManagerLevel = req.user.role === 'manager' || ['N1', 'N2', 'N3', 'PnL'].includes(String(req.user.level || ''));
+
+  const getHierarchyIds = async (rootId) => {
+    const rows = await User.aggregate([
+      { $match: { _id: rootId } },
+      {
+        $graphLookup: {
+          from: 'users',
+          startWith: '$_id',
+          connectFromField: '_id',
+          connectToField: 'reportingManagerId',
+          as: 'desc'
+        }
+      },
+      { $project: { ids: { $concatArrays: [['$_id'], '$desc._id'] } } }
+    ]);
+    return rows[0]?.ids || [rootId];
+  };
+
   let query = { role: { $ne: 'admin' } };
-  
-  // Optimization: If user belongs to a team, only show team members
-  if (req.user.teamId) {
-    query.teamId = req.user.teamId;
-  } else if (req.user.role !== 'hr') {
-    // If not HR and no team, limit to department or just show self/peers?
-    // For now, let's limit to 50 to avoid performance issues
-    // query.departmentId = req.user.departmentId; // Optional: filter by department
+
+  if (!isAdmin && !isHr) {
+    if (isManagerLevel) {
+      const ids = await getHierarchyIds(req.user._id);
+      query._id = { $in: ids };
+    } else if (req.user.teamId) {
+      query.teamId = req.user.teamId;
+    } else {
+      query._id = req.user._id;
+    }
   }
 
   // Get employees (scoped)
@@ -277,7 +296,7 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
     date: { $gte: startOfDay, $lte: endOfDay },
     employeeId: { $in: employeeIds }
   })
-  .select('employeeId status checkInTime')
+  .select('employeeId status')
   .lean();
 
   // Create Map for O(1) lookup
@@ -292,11 +311,6 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
     let status = 'absent';
     if (record) {
       status = record.status ? record.status.toLowerCase() : 'present';
-      // Simple late logic: if checkIn > 10:00 AM (updated policy)
-      const checkIn = new Date(record.checkInTime);
-      if (checkIn.getHours() >= 10 && checkIn.getMinutes() > 0) {
-        status = 'late';
-      }
     }
 
     return {

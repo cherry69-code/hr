@@ -72,6 +72,10 @@ const UserSchema = new mongoose.Schema({
     type: mongoose.Schema.ObjectId,
     ref: 'Team'
   },
+  shiftId: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Shift'
+  },
   designation: String,
   departmentId: {
     type: mongoose.Schema.ObjectId,

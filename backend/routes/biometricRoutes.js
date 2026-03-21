@@ -6,6 +6,8 @@ const {
   processPunch,
   getLogs
 } = require('../controllers/biometricController');
+const { getSyncStatus, runSyncNow, setDeviceToken } = require('../controllers/etimeSyncController');
+const { getConfig, updateConfig, testConnection } = require('../controllers/etimeConfigController');
 
 const router = express.Router();
 
@@ -30,6 +32,7 @@ const ipWhitelist = (req, res, next) => {
 };
 
 router.post('/punch', ipWhitelist, processPunch);
+router.post('/logs', ipWhitelist, processPunch);
 
 // Admin Management Endpoints
 router.use(protect);
@@ -41,5 +44,12 @@ router.route('/devices')
 
 router.route('/logs')
   .get(getLogs);
+
+router.get('/sync/status', getSyncStatus);
+router.post('/sync/run', runSyncNow);
+router.post('/devices/:deviceId/token', setDeviceToken);
+router.get('/etime-config', getConfig);
+router.put('/etime-config', updateConfig);
+router.post('/etime-config/test', testConnection);
 
 module.exports = router;

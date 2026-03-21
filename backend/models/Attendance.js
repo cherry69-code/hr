@@ -13,6 +13,18 @@ const AttendanceSchema = new mongoose.Schema({
   },
   checkInTime: Date,
   checkOutTime: Date,
+  workingMinutes: Number,
+  lateMinutes: Number,
+  lateFlag: {
+    type: Boolean,
+    default: false
+  },
+  earlyExitMinutes: Number,
+  missedPunch: {
+    type: Boolean,
+    default: false
+  },
+  missedPunchNotifiedAt: Date,
   latitude: Number, // legacy: check-in latitude
   longitude: Number, // legacy: check-in longitude
   gpsAccuracyMeters: Number,
@@ -54,7 +66,7 @@ const AttendanceSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Present', 'Absent', 'Half Day', 'Late', 'LOP', 'Weekly Off Work'],
+    enum: ['Present', 'Absent', 'Half Day', 'Late', 'LOP', 'Weekly Off Work', 'Missed Punch'],
     default: 'Absent'
   },
   createdAt: {

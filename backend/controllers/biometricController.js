@@ -1,9 +1,10 @@
 const BiometricDevice = require('../models/BiometricDevice');
 const BiometricLog = require('../models/BiometricLog');
-const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
+const crypto = require('crypto');
+const { upsertAttendanceFromPunches } = require('../services/attendanceEngine');
 
 // @desc    Register/Add a new Biometric Device
 // @route   POST /api/biometric/devices
@@ -29,13 +30,42 @@ exports.getDevices = asyncHandler(async (req, res, next) => {
 });
 
 // @desc    Process Biometric Punch (Push API)
-// @route   POST /api/biometric/punch
+// @route   POST /api/biometric/punch (legacy)
+// @route   POST /api/biometric/logs (preferred)
 // @access  Public (Secured by IP Whitelist Middleware)
 exports.processPunch = asyncHandler(async (req, res, next) => {
-  const { employee_code, device_id, punch_time, punch_type, source, image_base64 } = req.body;
+  const {
+    employee_code,
+    timestamp,
+    punch_time,
+    device_id,
+    punch_type,
+    verification_type,
+    source,
+    image_base64
+  } = req.body;
 
-  if (!employee_code || !punch_time) {
+  const punchTimeRaw = punch_time || timestamp;
+  if (!employee_code || !punchTimeRaw) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
+  }
+
+  const employeeCode = String(employee_code || '').trim();
+  const deviceId = String(device_id || 'UNKNOWN').trim() || 'UNKNOWN';
+
+  const token =
+    String(req.headers['x-biometric-token'] || '').trim() ||
+    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const device = await BiometricDevice.findOne({ deviceId }).lean();
+  if (!device) {
+    return res.status(403).json({ success: false, error: 'Invalid device_id' });
+  }
+  if (device.apiTokenHash) {
+    if (!token) return res.status(403).json({ success: false, error: 'Missing device token' });
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    if (tokenHash !== device.apiTokenHash) {
+      return res.status(403).json({ success: false, error: 'Invalid device token' });
+    }
   }
 
   // 1. Upload Photo if provided (Anti-Proxy)
@@ -44,7 +74,7 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
     try {
       const result = await cloudinary.uploader.upload(image_base64, {
         folder: 'attendance/biometric',
-        public_id: `${employee_code}_${Date.now()}`
+        public_id: `${employeeCode}_${Date.now()}`
       });
       imageUrl = result.secure_url;
     } catch (err) {
@@ -53,120 +83,72 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
   }
 
   // 2. Log Raw Punch
-  const log = await BiometricLog.create({
-    employeeCode: employee_code,
-    deviceId: device_id || 'UNKNOWN',
-    punchTime: punch_time,
-    punchType: punch_type || 'IN', // Usually device sends check-in/out or just '0'/'1'
-    source: source || 'BIOMETRIC',
-    imageUrl,
-    processed: false
-  });
+  const punchTime = new Date(punchTimeRaw);
+  if (Number.isNaN(punchTime.getTime())) {
+    return res.status(400).json({ success: false, error: 'Invalid timestamp' });
+  }
+  const uniqueKey = `${employeeCode}|${punchTime.toISOString()}`;
+
+  await BiometricLog.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        uniqueKey,
+        employeeCode,
+        deviceId,
+        punchTime,
+        punchType: String(punch_type || 'IN').toUpperCase(),
+        verificationType: String(verification_type || 'unknown').toLowerCase(),
+        source: String(source || 'BIOMETRIC').toLowerCase() === 'etime' ? 'etime' : 'BIOMETRIC',
+        imageUrl,
+        rawPayload: req.body,
+        processed: false,
+        receivedAt: Date.now()
+      }
+    },
+    { upsert: true }
+  );
+
+  const log = await BiometricLog.findOne({ uniqueKey }).lean();
 
   // 3. Process Attendance Logic (Sync immediately or async?)
   // We'll process immediately for real-time updates.
   
   // Find Employee
-  const employee = await User.findOne({ employeeId: employee_code });
+  const employee = await User.findOne({ employeeId: employeeCode });
   if (!employee) {
     // Log exists but user not found (maybe not synced yet)
-    return res.status(200).json({ success: true, message: 'Log received. Employee not found.', logId: log._id });
+    return res.status(200).json({ success: true, message: 'Log received. Employee not found.', logId: log?._id });
   }
 
-  const punchDate = new Date(punch_time);
+  const punchDate = new Date(punchTime);
   const startOfDay = new Date(punchDate);
   startOfDay.setHours(0, 0, 0, 0);
-  
   const endOfDay = new Date(punchDate);
   endOfDay.setHours(23, 59, 59, 999);
 
-  // Find existing attendance for the day
-  let attendance = await Attendance.findOne({
-    employeeId: employee._id,
-    date: { $gte: startOfDay, $lte: endOfDay }
+  const dayLogs = await BiometricLog.find({
+    employeeCode,
+    punchTime: { $gte: startOfDay, $lte: endOfDay }
+  })
+    .select('punchTime')
+    .lean();
+
+  const punches = (dayLogs || []).map((l) => l.punchTime);
+  const attendance = await upsertAttendanceFromPunches({
+    employee,
+    deviceId,
+    day: startOfDay,
+    punches,
+    source: 'BIOMETRIC'
   });
 
-  if (!attendance) {
-    // --- FIRST PUNCH (CHECK-IN) ---
-    
-    // Status Logic
-    // Max Login Time: 10:00 AM
-    const loginThreshold = new Date(startOfDay);
-    loginThreshold.setHours(10, 0, 0, 0);
-    
-    let status = 'Present';
-    if (punchDate > loginThreshold) {
-      status = 'Half Day'; // Late coming
-    }
-    
-    // Check Weekly Off
-    const day = punchDate.getDay();
-    if (day === 1) { // Monday Off
-        status = 'Weekly Off Work'; // Worked on off day
-    }
-
-    attendance = await Attendance.create({
-      employeeId: employee._id,
-      date: startOfDay, // Normalize to midnight for query consistency
-      checkInTime: punchDate,
-      source: 'BIOMETRIC',
-      deviceId: device_id,
-      status: status,
-      locationName: 'Office (Biometric)',
-      locationValidated: true,
-      insideRadius: true,
-      photoUrl: imageUrl // Store first punch photo
-    });
-
-  } else {
-    // --- SUBSEQUENT PUNCH (UPDATE CHECK-OUT) ---
-    
-    // Logic: Always update check-out to the LATEST punch time of the day
-    // This handles multiple IN/OUTs (lunch, breaks). The last punch is the final out.
-    
-    if (punchDate > new Date(attendance.checkInTime)) {
-        attendance.checkOutTime = punchDate;
-        
-        // Update checkout location/device info if needed?
-        // attendance.checkOutDeviceId = device_id; 
-        
-        // Recalculate Status if needed (e.g. was Half Day, now worked enough? Or reverse?)
-        // For now, keep existing status unless explicit override logic needed.
-        
-        // Check Half-Day Logic for Checkout (Early Exit)
-        const logoutThreshold = new Date(startOfDay);
-        logoutThreshold.setHours(19, 0, 0, 0); // 7 PM
-        const loginThreshold = new Date(startOfDay);
-        loginThreshold.setHours(10, 0, 0, 0);
-        
-        // Only downgrade to Half Day if not already Weekly Off
-        if (attendance.status !== 'Weekly Off Work') {
-            const isLateLogin = attendance.status === 'Half Day' || (new Date(attendance.checkInTime) > loginThreshold);
-            
-            if (isLateLogin) {
-                attendance.status = 'Half Day';
-            } else if (punchDate < logoutThreshold) {
-                 // Early exit < 7 PM
-                 attendance.status = 'Half Day';
-            } else {
-                 // On time login & On time logout
-                 attendance.status = 'Present';
-            }
-        }
-        
-        await attendance.save();
-    }
-  }
-
-  // Mark log as processed
-  log.processed = true;
-  log.processedAt = Date.now();
-  await log.save();
+  await BiometricLog.updateOne({ uniqueKey }, { $set: { processed: true, processedAt: Date.now() } });
 
   // Update Device Last Sync
-  await BiometricDevice.findOneAndUpdate({ deviceId: device_id }, { lastSyncAt: Date.now() });
+  await BiometricDevice.findOneAndUpdate({ deviceId }, { lastSyncAt: Date.now() });
 
-  res.status(200).json({ success: true, message: 'Punch processed successfully' });
+  res.status(200).json({ success: true, message: 'Punch processed successfully', attendance });
 });
 
 // @desc    Get Biometric Logs
@@ -177,6 +159,12 @@ exports.getLogs = asyncHandler(async (req, res, next) => {
   if (req.query.employeeCode) {
     query.employeeCode = req.query.employeeCode;
   }
+  if (req.query.deviceId) {
+    query.deviceId = req.query.deviceId;
+  }
+  if (req.query.source) {
+    query.source = req.query.source;
+  }
   if (req.query.date) {
     const d = new Date(req.query.date);
     const start = new Date(d.setHours(0,0,0,0));
@@ -184,6 +172,7 @@ exports.getLogs = asyncHandler(async (req, res, next) => {
     query.punchTime = { $gte: start, $lte: end };
   }
 
-  const logs = await BiometricLog.find(query).sort('-punchTime').limit(100);
+  const limit = req.query.limit ? Math.min(500, Math.max(1, Number(req.query.limit))) : 100;
+  const logs = await BiometricLog.find(query).sort('-punchTime').limit(limit);
   res.status(200).json({ success: true, count: logs.length, data: logs });
 });

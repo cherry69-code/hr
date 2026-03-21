@@ -60,10 +60,10 @@ const recalculatePayrollSummary = async (employeeId, date) => {
 
   records.forEach(r => {
     const s = r.status ? r.status.toLowerCase() : 'absent';
-    if (s === 'present' || s === 'weekly off work') present++;
+    if (s === 'present' || s === 'late' || s === 'weekly off work') present++;
     else if (s === 'half day') halfDay++;
     else if (s === 'lop') lop++;
-    else if (s === 'absent') absent++;
+    else if (s === 'absent' || s === 'missed punch') absent++;
   });
 
   // 3. Calculate Logic
