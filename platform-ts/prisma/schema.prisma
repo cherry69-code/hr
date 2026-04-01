@@ -1,0 +1,454 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model tenants {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  slug       String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("tenants")
+}
+
+model auth_users {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String   @db.Uuid
+  email         String
+  password_hash String
+  role          String   @default("employee")
+  two_factor_enabled Boolean @default(false)
+  two_factor_secret  String?
+  two_factor_backup_codes Json @default("[]")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id])
+  @@map("auth_users")
+}
+
+model auth_roles {
+  id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @unique
+
+  @@map("auth_roles")
+}
+
+model auth_user_roles {
+  user_id String @db.Uuid
+  role_id String @db.Uuid
+
+  user auth_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role auth_roles @relation(fields: [role_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, role_id])
+  @@map("auth_user_roles")
+}
+
+model auth_refresh_tokens {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id        String   @db.Uuid
+  user_id          String   @db.Uuid
+  family_id        String   @db.Uuid
+  jti_hash         String
+  replaced_by_hash String?
+  revoked_at       DateTime? @db.Timestamptz(6)
+  expires_at       DateTime @db.Timestamptz(6)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  user   auth_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([jti_hash])
+  @@index([tenant_id, user_id])
+  @@index([family_id])
+  @@map("auth_refresh_tokens")
+}
+
+model departments {
+  id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @unique
+
+  @@map("departments")
+}
+
+model teams {
+  id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @unique
+
+  @@map("teams")
+}
+
+model employees {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String   @db.Uuid
+  employee_code String
+  full_name     String
+  email         String?
+  phone         String?
+  status        String   @default("active")
+  joining_date  DateTime? @db.Date
+  department_id String?  @db.Uuid
+  team_id       String?  @db.Uuid
+  manager_id    String?  @db.Uuid
+  level         String   @default("n0")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     tenants     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  department departments? @relation(fields: [department_id], references: [id])
+  team       teams?       @relation(fields: [team_id], references: [id])
+  manager    employees?   @relation("manager_rel", fields: [manager_id], references: [id])
+  reportees  employees[]  @relation("manager_rel")
+
+  @@unique([tenant_id, employee_code])
+  @@index([tenant_id])
+  @@index([manager_id])
+  @@index([department_id])
+  @@index([team_id])
+  @@map("employees")
+}
+
+model shifts {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String @unique
+  start_time    DateTime @db.Time
+  end_time      DateTime @db.Time
+  grace_minutes Int @default(0)
+
+  @@map("shifts")
+}
+
+model locations {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String  @unique
+  lat           Decimal @db.Decimal(10, 7)
+  lng           Decimal @db.Decimal(10, 7)
+  radius_meters Int     @default(100)
+  active        Boolean @default(true)
+
+  @@index([active])
+  @@map("locations")
+}
+
+model biometric_devices {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  device_id  String   @unique
+  sensor_id  String?
+  location_id String? @db.Uuid
+  token_hash String?
+  status     String   @default("active")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  location locations? @relation(fields: [location_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([sensor_id])
+  @@map("biometric_devices")
+}
+
+model biometric_logs {
+  id                String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id         String   @db.Uuid
+  employee_code     String
+  punch_time        DateTime @db.Timestamptz(6)
+  device_id         String?
+  punch_type        String?
+  verification_type String?
+  source            String   @default("etime")
+  raw_payload       Json     @default("{}")
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@id([tenant_id, employee_code, punch_time])
+  @@index([tenant_id])
+  @@index([punch_time(sort: Desc)])
+  @@map("biometric_logs")
+}
+
+model attendance_days {
+  employee_id      String   @db.Uuid
+  date             DateTime @db.Date
+  id               String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id        String   @db.Uuid
+  check_in         DateTime? @db.Timestamptz(6)
+  check_out        DateTime? @db.Timestamptz(6)
+  working_minutes  Int      @default(0)
+  late_flag        Boolean  @default(false)
+  late_minutes     Int      @default(0)
+  early_exit_minutes Int    @default(0)
+  status           String   @default("absent")
+  source           String   @default("biometric")
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@id([employee_id, date])
+  @@index([tenant_id])
+  @@index([tenant_id, date])
+  @@index([employee_id, date(sort: Desc)])
+  @@map("attendance_days")
+}
+
+model attendance_corrections {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_id  String   @db.Uuid
+  date         DateTime @db.Date
+  old_status   String?
+  new_status   String
+  reason       String?
+  requested_by String?  @db.Uuid
+  approved_by  String?  @db.Uuid
+  status       String   @default("pending")
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([employee_id, date(sort: Desc)])
+  @@map("attendance_corrections")
+}
+
+model leaves {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_id String   @db.Uuid
+  from_date   DateTime @db.Date
+  to_date     DateTime @db.Date
+  type        String   @default("annual")
+  status      String   @default("pending")
+  approved_by String?  @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([employee_id, from_date, to_date])
+  @@map("leaves")
+}
+
+model salary_profiles {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String   @db.Uuid
+  employee_id   String   @db.Uuid
+  salary        Decimal  @default(0) @db.Decimal(14, 2)
+  effective_from DateTime @db.Date
+  effective_to  DateTime? @db.Date
+
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([employee_id, effective_from(sort: Desc)])
+  @@map("salary_profiles")
+}
+
+model payroll_runs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  month      Int
+  year       Int
+  status     String   @default("created")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([year, month])
+  @@map("payroll_runs")
+}
+
+model payslips {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  employee_id String  @db.Uuid
+  month      Int
+  year       Int
+  gross      Decimal  @default(0) @db.Decimal(14, 2)
+  deductions Decimal  @default(0) @db.Decimal(14, 2)
+  net        Decimal  @default(0) @db.Decimal(14, 2)
+  meta       Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, employee_id, year, month])
+  @@index([tenant_id, year(sort: Desc), month(sort: Desc)])
+  @@map("payslips")
+}
+
+model payroll_adjustments {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  employee_id String  @db.Uuid
+  month      Int
+  year       Int
+  type       String
+  amount     Decimal  @default(0) @db.Decimal(14, 2)
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([tenant_id, employee_id, year(sort: Desc), month(sort: Desc)])
+  @@map("payroll_adjustments")
+}
+
+model incentive_rules {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  slabs      Json     @default("[]")
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("incentive_rules")
+}
+
+model incentive_calculations {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_id     String   @db.Uuid
+  month           Int
+  year            Int
+  revenue         Decimal  @default(0) @db.Decimal(14, 2)
+  incentive_amount Decimal @default(0) @db.Decimal(14, 2)
+  breakdown       Json     @default("[]")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([employee_id, year(sort: Desc), month(sort: Desc)])
+  @@map("incentive_calculations")
+}
+
+model dashboard_daily_stats {
+  tenant_id       String   @db.Uuid
+  date            DateTime @db.Date
+  total_employees Int      @default(0)
+  present_count   Int      @default(0)
+  half_day_count  Int      @default(0)
+  absent_count    Int      @default(0)
+  lop_count       Int      @default(0)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@id([tenant_id, date])
+  @@index([tenant_id, date(sort: Desc)])
+  @@map("dashboard_daily_stats")
+}
+
+model leaderboard_stats {
+  tenant_id  String @db.Uuid
+  year        Int
+  month       Int
+  employee_id String @db.Uuid
+  score       Decimal @default(0) @db.Decimal(14, 2)
+  rank        Int     @default(0)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  employee employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@id([tenant_id, year, month, employee_id])
+  @@index([tenant_id, year(sort: Desc), month(sort: Desc), rank])
+  @@map("leaderboard_stats")
+}
+
+model event_logs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  service    String
+  type       String
+  payload    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([created_at(sort: Desc)])
+  @@index([service, created_at(sort: Desc)])
+  @@index([type])
+  @@map("event_logs")
+}
+
+model audit_logs {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String   @db.Uuid
+  actor_user_id String?  @db.Uuid
+  actor_email   String?
+  action        String
+  entity_type   String
+  entity_id     String?
+  meta          Json     @default("{}")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([created_at(sort: Desc)])
+  @@index([actor_user_id, created_at(sort: Desc)])
+  @@index([entity_type, entity_id, created_at(sort: Desc)])
+  @@index([action, created_at(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model feature_flags {
+  tenant_id  String  @db.Uuid
+  key        String
+  enabled    Boolean @default(false)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@id([tenant_id, key])
+  @@index([tenant_id])
+  @@map("feature_flags")
+}
+
+model subscription_plans {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique
+  name        String
+  price_cents Int      @default(0)
+  active      Boolean  @default(true)
+  limits      Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("subscription_plans")
+}
+
+model tenant_subscriptions {
+  tenant_id  String  @id @db.Uuid
+  plan_id    String  @db.Uuid
+  status     String  @default("active")
+  started_at DateTime @default(now()) @db.Timestamptz(6)
+  ends_at    DateTime? @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  plan   subscription_plans @relation(fields: [plan_id], references: [id])
+
+  @@index([plan_id])
+  @@map("tenant_subscriptions")
+}
+
+model tenant_usage_daily {
+  tenant_id   String   @db.Uuid
+  date        DateTime @db.Date
+  service     String
+  requests    Int      @default(0)
+  errors_5xx  Int      @default(0)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant tenants @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@id([tenant_id, date, service])
+  @@index([tenant_id, date(sort: Desc)])
+  @@map("tenant_usage_daily")
+}

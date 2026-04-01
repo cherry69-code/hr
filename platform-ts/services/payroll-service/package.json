@@ -1,0 +1,29 @@
+{
+  "name": "payroll-service",
+  "private": true,
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/compress": "^8.3.1",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/jwt": "^9.1.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "@prisma/client": "^6.6.0",
+    "bullmq": "^5.25.0",
+    "fastify": "^5.2.0",
+    "fastify-plugin": "^5.0.1",
+    "ioredis": "^5.6.0",
+    "prom-client": "^15.1.3",
+    "prophr": "file:../../.."
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "prisma": "^6.6.0",
+    "typescript": "^5.8.2"
+  }
+}

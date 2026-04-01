@@ -1,0 +1,21 @@
+{
+  "name": "usage-worker",
+  "private": true,
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.6.0",
+    "bullmq": "^5.25.0",
+    "ioredis": "^5.6.0",
+    "prophr": "file:../../.."
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "prisma": "^6.6.0",
+    "typescript": "^5.8.2"
+  }
+}

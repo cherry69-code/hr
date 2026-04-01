@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  - job_name: auth-service
+    static_configs:
+      - targets: ['auth-service:3001']
+    metrics_path: /metrics
+
+  - job_name: employee-service
+    static_configs:
+      - targets: ['employee-service:3002']
+    metrics_path: /metrics
+
+  - job_name: attendance-service
+    static_configs:
+      - targets: ['attendance-service:3003']
+    metrics_path: /metrics
+
+  - job_name: payroll-service
+    static_configs:
+      - targets: ['payroll-service:3004']
+    metrics_path: /metrics
+
+  - job_name: notification-service
+    static_configs:
+      - targets: ['notification-service:3005']
+    metrics_path: /metrics
+
+  - job_name: ws-gateway
+    static_configs:
+      - targets: ['ws-gateway:3006']
+    metrics_path: /metrics
+
+  - job_name: admin-service
+    static_configs:
+      - targets: ['admin-service:3007']
+    metrics_path: /metrics

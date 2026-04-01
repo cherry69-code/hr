@@ -1,0 +1,33 @@
+{
+  "uid": "hrms-tenant",
+  "title": "HRMS - Tenant Usage (Top Tenants)",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "table",
+      "title": "Top Tenants - Requests Today",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "expr": "topk(20, tenant_requests_today)",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Top Tenants - 5xx Today",
+      "gridPos": { "x": 0, "y": 10, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "expr": "topk(20, tenant_errors_5xx_today)",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}
+

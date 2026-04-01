@@ -1,0 +1,18 @@
+{
+  "name": "notification-worker",
+  "private": true,
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.25.0",
+    "ioredis": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
