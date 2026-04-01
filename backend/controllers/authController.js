@@ -3,6 +3,9 @@ const asyncHandler = require('../middlewares/asyncHandler');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
 const ms = (v) => v * 1000;
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { getRedis } = require('../config/redis');
 
 const setCookie = (res, name, value, opts = {}) => {
   const isProd = String(process.env.NODE_ENV).toLowerCase() === 'production';
@@ -15,16 +18,20 @@ const setCookie = (res, name, value, opts = {}) => {
   });
 };
 
-const createAccessToken = (user) =>
-  require('jsonwebtoken').sign(
-    { id: user._id, role: user.role, level: user.level, companyId: user.companyId || undefined },
-    process.env.JWT_SECRET,
-    { expiresIn: '15m' }
-  );
+const signJwtAsync = (payload, secret, options) =>
+  new Promise((resolve, reject) => {
+    jwt.sign(payload, secret, options, (err, token) => {
+      if (err || !token) return reject(err || new Error('sign_failed'));
+      resolve(token);
+    });
+  });
 
-const createRefreshToken = (user, tokenId) =>
-  require('jsonwebtoken').sign(
-    { id: user._id, tid: tokenId },
+const createAccessTokenAsync = (user) =>
+  signJwtAsync({ uid: String(user._id), role: String(user.role) }, process.env.JWT_SECRET, { expiresIn: '15m' });
+
+const createRefreshTokenAsync = (userId, tokenId) =>
+  signJwtAsync(
+    { uid: String(userId), tid: String(tokenId) },
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -45,9 +52,8 @@ exports.register = asyncHandler(async (req, res, next) => {
     ...rest
   });
 
-  const token = createAccessToken(user);
   const tid = crypto.randomBytes(16).toString('hex');
-  const refresh = createRefreshToken(user, tid);
+  const [token, refresh] = await Promise.all([createAccessTokenAsync(user), createRefreshTokenAsync(user._id, tid)]);
   user.refreshTokenHash = hash(tid);
   user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await user.save({ validateBeforeSave: false });
@@ -67,80 +73,71 @@ exports.register = asyncHandler(async (req, res, next) => {
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
   const { email, password, employeeCode } = req.body;
-  const MAX_ATTEMPTS = 5;
-  const LOCK_MS = 15 * 60 * 1000;
-
   if (!password) {
     return res.status(400).json({ success: false, error: 'Please provide password' });
   }
 
-  // Determine login type: Employee Code or Email
+  const empCode = employeeCode ? String(employeeCode).trim() : '';
+  const emailNorm = email ? String(email).trim() : '';
+  if (!empCode && !emailNorm) return res.status(400).json({ success: false, error: 'Please provide Email or Employee Code' });
+
+  const redis = getRedis();
+  const cacheKey = empCode ? `auth:user:${empCode}` : `auth:user:${emailNorm}`;
+  let cached = null;
+  if (redis) cached = await redis.get(cacheKey).catch(() => null);
+
   let user = null;
-  
-  if (employeeCode) {
-    user = await User.findOne({ employeeId: employeeCode }).select('+password'); // Using employeeId as Employee Code
-  } else if (email) {
-    user = await User.findOne({ email }).select('+password');
-  } else {
-    return res.status(400).json({ success: false, error: 'Please provide Email or Employee Code' });
+  if (cached) {
+    try {
+      user = JSON.parse(cached);
+    } catch {}
   }
 
   if (!user) {
-    return res.status(401).json({ success: false, error: 'Invalid credentials' });
-  }
-
-  if (user.lockUntil && user.lockUntil.getTime && user.lockUntil.getTime() > Date.now()) {
-    return res.status(429).json({ success: false, error: 'Account temporarily locked. Try again later.' });
-  }
-
-  const isMatch = await user.matchPassword(password);
-
-  if (!isMatch) {
-    const attempts = Number(user.loginAttempts || 0) + 1;
-    user.loginAttempts = attempts;
-    if (attempts >= MAX_ATTEMPTS) {
-      user.lockUntil = new Date(Date.now() + LOCK_MS);
-    }
-    await user.save({ validateBeforeSave: false });
-    return res.status(401).json({ success: false, error: 'Invalid credentials' });
-  }
-
-  if (String(user.status || '').toLowerCase() === 'active' && user.joiningDate) {
-    const jd = new Date(user.joiningDate);
-    if (!Number.isNaN(jd.getTime())) {
-      const now = new Date();
-      const joinStart = new Date(jd);
-      joinStart.setHours(0, 0, 0, 0);
-      if (now.getTime() < joinStart.getTime()) {
-        return res.status(403).json({
-          success: false,
-          error: `Your account will be active from ${joinStart.toLocaleDateString()}.`
-        });
-      }
+    const query = empCode ? { employeeId: empCode } : { email: emailNorm };
+    const row = await User.findOne(query)
+      .select('_id password role status employeeId email')
+      .lean();
+    if (!row) return res.status(401).json({ success: false, error: 'Invalid credentials' });
+    user = {
+      id: String(row._id),
+      password_hash: String(row.password || ''),
+      role: String(row.role || 'employee'),
+      status: String(row.status || ''),
+      employee_code: row.employeeId ? String(row.employeeId) : null,
+      email: row.email ? String(row.email) : null
+    };
+    if (redis) {
+      const v = JSON.stringify(user);
+      const p = redis.pipeline();
+      if (user.employee_code) p.set(`auth:user:${user.employee_code}`, v, 'EX', 600);
+      if (user.email) p.set(`auth:user:${user.email}`, v, 'EX', 600);
+      await p.exec().catch(() => {});
     }
   }
 
-  if (user.loginAttempts || user.lockUntil) {
-    user.loginAttempts = 0;
-    user.lockUntil = undefined;
+  if (String(user.status || '').toLowerCase() === 'inactive') {
+    return res.status(403).json({ success: false, error: 'Account inactive' });
   }
 
-  const token = createAccessToken(user);
+  const ok = await bcrypt.compare(String(password), String(user.password_hash || ''));
+  if (!ok) return res.status(401).json({ success: false, error: 'Invalid credentials' });
+
   const tid = crypto.randomBytes(16).toString('hex');
-  const refresh = createRefreshToken(user, tid);
+  const refreshTokenHash = hash(tid);
+  const refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  user.refreshTokenHash = hash(tid);
-  user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await user.save({ validateBeforeSave: false });
+  const [token, refreshToken] = await Promise.all([
+    signJwtAsync({ uid: String(user.id), role: String(user.role) }, process.env.JWT_SECRET, { expiresIn: '15m' }),
+    createRefreshTokenAsync(String(user.id), tid)
+  ]);
+
+  await User.updateOne({ _id: user.id }, { $set: { refreshTokenHash, refreshTokenExpires } }).catch(() => {});
 
   setCookie(res, 'accessToken', token, { maxAge: 15 * 60 * 1000 });
-  setCookie(res, 'refreshToken', refresh, { maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'strict' });
+  setCookie(res, 'refreshToken', refreshToken, { maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'strict' });
 
-  res.status(200).json({
-    success: true,
-    token,
-    user: { id: user._id, fullName: user.fullName, email: user.email, role: user.role }
-  });
+  res.status(200).json({ success: true, token, refreshToken, role: user.role });
 });
 
 // @desc    Get current user
@@ -164,12 +161,13 @@ exports.refresh = asyncHandler(async (req, res) => {
 
   let payload;
   try {
-    payload = require('jsonwebtoken').verify(rt, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    payload = jwt.verify(rt, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
   } catch {
     return res.status(401).json({ success: false, error: 'Invalid refresh token' });
   }
 
-  const user = await User.findById(payload.id).select('+password');
+  const userId = payload.uid || payload.id;
+  const user = await User.findById(userId).select('refreshTokenHash refreshTokenExpires role');
   if (!user || !user.refreshTokenHash || !user.refreshTokenExpires || user.refreshTokenExpires.getTime() < Date.now()) {
     return res.status(401).json({ success: false, error: 'Refresh token expired' });
   }
@@ -178,12 +176,12 @@ exports.refresh = asyncHandler(async (req, res) => {
     return res.status(401).json({ success: false, error: 'Refresh token mismatch' });
   }
 
-  const newAccess = createAccessToken(user);
   const newTid = crypto.randomBytes(16).toString('hex');
-  const newRefresh = createRefreshToken(user, newTid);
-  user.refreshTokenHash = hash(newTid);
-  user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await user.save({ validateBeforeSave: false });
+  const newRefreshTokenHash = hash(newTid);
+  const newRefreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const [newAccess, newRefresh] = await Promise.all([createAccessTokenAsync(user), createRefreshTokenAsync(user._id, newTid)]);
+  await User.updateOne({ _id: user._id }, { $set: { refreshTokenHash: newRefreshTokenHash, refreshTokenExpires: newRefreshTokenExpires } }).catch(() => {});
 
   setCookie(res, 'accessToken', newAccess, { maxAge: 15 * 60 * 1000 });
   setCookie(res, 'refreshToken', newRefresh, { maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'strict' });
@@ -275,7 +273,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
 // Legacy helper (unused): kept for backward compatibility
 const sendTokenResponse = (user, statusCode, res) => {
-  const token = createAccessToken(user);
+  const token = jwt.sign({ uid: String(user._id), role: String(user.role) }, process.env.JWT_SECRET, { expiresIn: '15m' });
   res.status(statusCode).json({
     success: true,
     token,

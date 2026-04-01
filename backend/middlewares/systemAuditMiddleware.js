@@ -14,6 +14,7 @@ const safeBodyKeys = (body) => {
 };
 
 const systemAuditMiddleware = (req, res, next) => {
+  if (String(process.env.NODE_ENV || '').toLowerCase() === 'test') return next();
   if (!shouldLog(req)) return next();
 
   const startedAt = Date.now();

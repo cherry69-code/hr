@@ -185,7 +185,9 @@ UserSchema.pre('save', async function (next) {
   } catch {}
 
   if (this.isModified('password')) {
-    const salt = await bcrypt.genSalt(12);
+    const raw = process.env.BCRYPT_ROUNDS ? Number(process.env.BCRYPT_ROUNDS) : 10;
+    const rounds = Math.min(10, Math.max(8, Number.isFinite(raw) ? raw : 10));
+    const salt = await bcrypt.genSalt(rounds);
     this.password = await bcrypt.hash(this.password, salt);
   }
   next();
@@ -227,5 +229,7 @@ UserSchema.index({ status: 1 });
 UserSchema.index({ departmentId: 1 });
 UserSchema.index({ reportingManagerId: 1 });
 UserSchema.index({ teamId: 1 });
+UserSchema.index({ employeeId: 1 }, { name: 'idx_users_employee_code' });
+UserSchema.index({ email: 1 }, { name: 'idx_users_email' });
 
 module.exports = mongoose.model('User', UserSchema);

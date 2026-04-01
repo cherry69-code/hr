@@ -1,6 +1,7 @@
 const Payslip = require('../models/Payslip');
 const EmployeeDocument = require('../models/EmployeeDocument');
 const User = require('../models/User');
+const Attendance = require('../models/Attendance');
 const asyncHandler = require('../middlewares/asyncHandler');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
@@ -11,65 +12,52 @@ const { calculatePayroll } = require('../services/payroll.service');
 const AuditLog = require('../models/AuditLog');
 const IncentiveCalculation = require('../models/IncentiveCalculation');
 
-// @desc    Calculate monthly salary
-// @route   POST /api/payroll/calculate/:employeeId
-// @access  Private/Admin/HR
-exports.calculateSalary = asyncHandler(async (req, res, next) => {
-  req.body.employeeId = req.params.employeeId;
-  return exports.generatePayslip(req, res);
-});
-
-exports.calculatePayroll = asyncHandler(async (req, res) => {
-  const { employeeId, ctc, monthlyBasic, role, target, achievedNR, teamIncentives } = req.body;
-
-  let effectiveCtc = Number(ctc || 0);
-  let employeeDoc = null;
-
-  if (employeeId) {
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(employeeId));
-    employeeDoc = isObjectId ? await User.findById(employeeId).lean() : await User.findOne({ employeeId }).lean();
-    if (!employeeDoc) {
-      return res.status(404).json({ success: false, error: 'Employee not found' });
-    }
-    effectiveCtc = Number(employeeDoc?.salary?.ctc ?? effectiveCtc);
-  }
-
-  try {
-    const payroll = await calculatePayroll({
-      ctc: effectiveCtc,
-      monthlyBasic,
-      role,
-      target,
-      achievedNR,
-      teamIncentives
-    });
-    return res.status(200).json({ success: true, data: payroll });
-  } catch (e) {
-    return res.status(400).json({ success: false, error: e.message || 'Payroll calculation failed' });
-  }
-});
-
-exports.generatePayslip = asyncHandler(async (req, res) => {
-  const { employeeId, month, year, role, target, achievedNR, teamIncentives } = req.body;
-
+const monthRange = (month, year) => {
   const m = Number(month);
   const y = Number(year);
+  const startOfMonth = new Date(y, m - 1, 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endDay = new Date(y, m, 0);
+  endDay.setHours(0, 0, 0, 0);
+  const endOfMonth = new Date(endDay);
+  endOfMonth.setHours(23, 59, 59, 999);
+  return { startOfMonth, endDay, endOfMonth, daysInMonth: endDay.getDate() };
+};
 
-  if (!employeeId) {
-    return res.status(400).json({ success: false, error: 'EmployeeId is required' });
-  }
-  if (!m || m < 1 || m > 12 || !y) {
-    return res.status(400).json({ success: false, error: 'Please provide valid month and year' });
-  }
+const attendanceStats = async (employeeObjectId, start, end) => {
+  const rows = await Attendance.aggregate([
+    { $match: { employeeId: employeeObjectId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: '$status', count: { $sum: 1 } } }
+  ]).catch(() => []);
+  const byStatus = new Map(rows.map((r) => [String(r._id || ''), Number(r.count || 0)]));
+  const present =
+    (byStatus.get('Present') || 0) +
+    (byStatus.get('Late') || 0) +
+    (byStatus.get('Weekly Off Work') || 0);
+  const half = byStatus.get('Half Day') || 0;
+  const lop = byStatus.get('LOP') || 0;
+  const absent = (byStatus.get('Absent') || 0) + (byStatus.get('Missed Punch') || 0);
+  const presentEquivalent = present + 0.5 * half;
+  const unpaidEquivalent = lop + absent + 0.5 * half;
+  const total = rows.reduce((acc, r) => acc + Number(r.count || 0), 0);
+  return { presentEquivalent, unpaidEquivalent, total };
+};
 
-  const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(employeeId));
-  const employee = isObjectId
-    ? await User.findById(employeeId).populate('departmentId').lean()
-    : await User.findOne({ employeeId }).populate('departmentId').lean();
+const cloudinarySignedRawUrlFromPublicId = (publicId) =>
+  cloudinary.url(publicId, { resource_type: 'raw', type: 'upload', format: 'pdf', secure: true, sign_url: true });
 
-  if (!employee) {
-    return res.status(404).json({ success: false, error: 'Employee not found' });
-  }
+const cloudinaryPublicIdFromUrl = (rawUrl) => {
+  const url = String(rawUrl || '').split('?')[0];
+  const match = url.match(/\/raw\/upload\/(?:v\d+\/)?(.+)\.pdf$/);
+  if (match && match[1]) return match[1];
+  const match2 = url.match(/\/raw\/upload\/(?:v\d+\/)?(.+)$/);
+  if (match2 && match2[1]) return match2[1].replace(/\.pdf$/i, '');
+  return '';
+};
+
+const generatePayslipForEmployee = async (req, employee, month, year, input = {}) => {
+  const m = Number(month);
+  const y = Number(year);
 
   let effectiveCtc = 0;
   try {
@@ -80,46 +68,39 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
   }
 
   let payroll;
-  try {
-    payroll = await calculatePayroll({
-      ctc: effectiveCtc,
-      role,
-      target,
-      achievedNR,
-      teamIncentives
-    });
-  } catch (e) {
-    return res.status(400).json({ success: false, error: e.message || 'Payroll calculation failed' });
-  }
+  payroll = await calculatePayroll({
+    ctc: effectiveCtc,
+    role: input.role !== undefined ? input.role : employee.role,
+    target: input.target,
+    achievedNR: input.achievedNR,
+    teamIncentives: input.teamIncentives
+  });
 
-  const startOfMonth = new Date(y, m - 1, 1);
-  startOfMonth.setHours(0, 0, 0, 0);
-  const endDay = new Date(y, m, 0);
-  endDay.setHours(0, 0, 0, 0);
-  const endOfMonth = new Date(endDay);
-  endOfMonth.setHours(23, 59, 59, 999);
-  const daysInMonth = endDay.getDate();
+  const { startOfMonth, endDay, endOfMonth, daysInMonth } = monthRange(m, y);
 
   const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
   const scale = (v, factor) => round2(Number(v || 0) * factor);
 
   let eligibleDays = daysInMonth;
   const jd = employee.joiningDate ? new Date(employee.joiningDate) : null;
+  let effectiveStart = startOfMonth;
   if (jd && !Number.isNaN(jd.getTime())) {
     const joinStart = new Date(jd);
     joinStart.setHours(0, 0, 0, 0);
     if (joinStart.getTime() > endDay.getTime()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Employee joining date is after the selected payroll month'
-      });
+      throw new Error('Employee joining date is after the selected payroll month');
     }
-    const effectiveStart = joinStart.getTime() > startOfMonth.getTime() ? joinStart : startOfMonth;
+    effectiveStart = joinStart.getTime() > startOfMonth.getTime() ? joinStart : startOfMonth;
     eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   }
 
-  const prorationFactor = daysInMonth > 0 ? eligibleDays / daysInMonth : 1;
-  if (prorationFactor > 0 && prorationFactor < 1) {
+  const a = await attendanceStats(employee._id, effectiveStart, endOfMonth);
+  const useAttendance = a.total > 0;
+  const payableDays = useAttendance ? Math.min(eligibleDays, Math.max(0, a.presentEquivalent)) : eligibleDays;
+  const unpaidDays = useAttendance ? Math.min(eligibleDays, Math.max(0, a.unpaidEquivalent)) : 0;
+
+  const prorationFactor = eligibleDays > 0 ? payableDays / eligibleDays : 1;
+  if (prorationFactor >= 0 && prorationFactor < 1) {
     payroll = {
       ...payroll,
       ctcMonthly: scale(payroll.ctcMonthly, prorationFactor),
@@ -180,10 +161,15 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
   doc.text(`Department: ${employee.departmentId?.name || 'N/A'}`);
   doc.moveDown();
 
-  doc.text(`CTC (Annual): ${payroll.ctcAnnual.toFixed(2)}`);
-  if (prorationFactor > 0 && prorationFactor < 1) {
-    doc.text(`Proration: ${eligibleDays}/${daysInMonth} days (Joining Date: ${new Date(employee.joiningDate).toLocaleDateString()})`);
+  doc.text(`Payroll Period: ${effectiveStart.toLocaleDateString()} - ${endDay.toLocaleDateString()}`);
+  if (useAttendance) {
+    doc.text(`Attendance: Paid Days ${payableDays}/${eligibleDays}, Unpaid Days ${unpaidDays}/${eligibleDays}`);
   }
+  if (prorationFactor >= 0 && prorationFactor < 1) {
+    doc.text(`Proration Factor: ${(prorationFactor * 100).toFixed(2)}%`);
+  }
+
+  doc.text(`CTC (Annual): ${payroll.ctcAnnual.toFixed(2)}`);
   doc.text(`Gross Salary: ${payroll.gross.toFixed(2)}`);
   doc.text(`Incentive Cash (Approved/Paid): ${incentiveCash.toFixed(2)}`);
   doc.text(`Incentive ESOP (Approved/Paid): ${incentiveEsop.toFixed(2)}`);
@@ -264,17 +250,19 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     writeStream.on('error', reject);
   });
 
+  const publicId = `payslips/${employee._id}/${y}/${String(m).padStart(2, '0')}`;
   let pdfUrl = '';
   try {
-    const result = await cloudinary.uploader.upload(filePath, {
+    await cloudinary.uploader.upload(filePath, {
       resource_type: 'raw',
       folder: 'payslips',
-      public_id: `payslips/${employee._id}/${y}/${String(m).padStart(2, '0')}`,
-      access_mode: 'public'
+      public_id: `${employee._id}/${y}/${String(m).padStart(2, '0')}`
     });
-    pdfUrl = result.secure_url;
+    pdfUrl = cloudinarySignedRawUrlFromPublicId(publicId);
   } catch (error) {}
-  try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {}
 
   const payslipData = {
     employeeId: employee._id,
@@ -285,8 +273,8 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     ctcMonthly: payroll.ctcMonthly,
     attendance: {
       totalWorkingDays: Number(eligibleDays || 0),
-      presentDays: 0,
-      unpaidLeaveDays: 0
+      presentDays: Number(payableDays || 0),
+      unpaidLeaveDays: Number(unpaidDays || 0)
     },
     earnings: {
       basic: payroll.basic,
@@ -304,8 +292,8 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
       gratuity: payroll.gratuity
     },
     incentiveBreakdown: {
-      target: Number(target || 0),
-      achievedNR: Number(achievedNR || 0),
+      target: Number(input.target || 0),
+      achievedNR: Number(input.achievedNR || 0),
       achievementMultiple: 0,
       quarterlyIncentive: 0,
       monthlyIncentiveAccrual: 0,
@@ -324,11 +312,12 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
     generatedAt: new Date()
   };
 
-  const payslip = await Payslip.findOneAndUpdate(
-    { employeeId: employee._id, month: m, year: y },
-    payslipData,
-    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
-  );
+  const payslip = await Payslip.findOneAndUpdate({ employeeId: employee._id, month: m, year: y }, payslipData, {
+    new: true,
+    upsert: true,
+    runValidators: true,
+    setDefaultsOnInsert: true
+  });
 
   if (pdfUrl) {
     const title = `Payslip - ${monthName} ${y}`;
@@ -352,9 +341,85 @@ exports.generatePayslip = asyncHandler(async (req, res) => {
       action: 'payroll_generated',
       performedBy: String(req.user?._id || ''),
       ipAddress: req.ip || '',
-      meta: { employeeId: String(employee._id), month: m, year: y, netSalary: payslip?.netSalary }
+      meta: {
+        employeeId: String(employee._id),
+        month: m,
+        year: y,
+        netSalary: payslip?.netSalary,
+        payableDays,
+        eligibleDays
+      }
     });
   } catch {}
+
+  return payslip;
+};
+
+// @desc    Calculate monthly salary
+// @route   POST /api/payroll/calculate/:employeeId
+// @access  Private/Admin/HR
+exports.calculateSalary = asyncHandler(async (req, res, next) => {
+  req.body.employeeId = req.params.employeeId;
+  return exports.generatePayslip(req, res);
+});
+
+exports.calculatePayroll = asyncHandler(async (req, res) => {
+  const { employeeId, ctc, monthlyBasic, role, target, achievedNR, teamIncentives } = req.body;
+
+  let effectiveCtc = Number(ctc || 0);
+  let employeeDoc = null;
+
+  if (employeeId) {
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(employeeId));
+    employeeDoc = isObjectId ? await User.findById(employeeId).lean() : await User.findOne({ employeeId }).lean();
+    if (!employeeDoc) {
+      return res.status(404).json({ success: false, error: 'Employee not found' });
+    }
+    effectiveCtc = Number(employeeDoc?.salary?.ctc ?? effectiveCtc);
+  }
+
+  try {
+    const payroll = await calculatePayroll({
+      ctc: effectiveCtc,
+      monthlyBasic,
+      role,
+      target,
+      achievedNR,
+      teamIncentives
+    });
+    return res.status(200).json({ success: true, data: payroll });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message || 'Payroll calculation failed' });
+  }
+});
+
+exports.generatePayslip = asyncHandler(async (req, res) => {
+  const { employeeId, month, year, role, target, achievedNR, teamIncentives } = req.body;
+
+  const m = Number(month);
+  const y = Number(year);
+
+  if (!employeeId) {
+    return res.status(400).json({ success: false, error: 'EmployeeId is required' });
+  }
+  if (!m || m < 1 || m > 12 || !y) {
+    return res.status(400).json({ success: false, error: 'Please provide valid month and year' });
+  }
+
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(employeeId));
+  const employee = isObjectId
+    ? await User.findById(employeeId).populate('departmentId').lean()
+    : await User.findOne({ employeeId }).populate('departmentId').lean();
+
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+  let payslip;
+  try {
+    payslip = await generatePayslipForEmployee(req, employee, m, y, { role, target, achievedNR, teamIncentives });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message || 'Payroll calculation failed' });
+  }
 
   res.status(200).json({ success: true, data: payslip });
 });
@@ -382,6 +447,49 @@ exports.calculateAllPayroll = asyncHandler(async (req, res, next) => {
   }
 
   res.status(200).json({ success: true, data: results });
+});
+
+// @desc    Generate payslips for all employees for a month/year
+// @route   POST /api/payroll/generate-all
+// @access  Private/Admin/HR
+exports.generateAllPayslips = asyncHandler(async (req, res) => {
+  const m = Number(req.body?.month);
+  const y = Number(req.body?.year);
+  if (!m || m < 1 || m > 12 || !y) {
+    return res.status(400).json({ success: false, error: 'Please provide valid month and year' });
+  }
+
+  const employees = await User.find({ role: { $ne: 'admin' }, status: { $ne: 'inactive' } }).populate('departmentId').lean();
+  const results = [];
+  for (const emp of employees) {
+    try {
+      const slip = await generatePayslipForEmployee(req, emp, m, y, { role: emp.role });
+      results.push({ employeeId: String(emp._id), ok: true, payslipId: String(slip?._id || ''), netSalary: Number(slip?.netSalary || 0) });
+    } catch (e) {
+      results.push({ employeeId: String(emp._id), ok: false, error: String(e?.message || e || 'failed') });
+    }
+  }
+  const okCount = results.filter((r) => r.ok).length;
+  return res.status(200).json({ success: true, data: { month: m, year: y, ok: okCount, total: results.length, results } });
+});
+
+// @desc    Get signed download URL for a payslip
+// @route   GET /api/payroll/payslip/:id/download-url
+// @access  Private
+exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
+  const payslipId = String(req.params?.id || '').trim();
+  if (!payslipId) return res.status(400).json({ success: false, error: 'invalid id' });
+  const payslip = await Payslip.findById(payslipId).populate('employeeId', 'role').lean();
+  if (!payslip) return res.status(404).json({ success: false, error: 'not found' });
+
+  const isOwner = String((payslip.employeeId?._id || payslip.employeeId) || '') === String(req.user?._id || req.user?.id || '');
+  const isPrivileged = ['admin', 'hr'].includes(String(req.user?.role || ''));
+  if (!isOwner && !isPrivileged) return res.status(403).json({ success: false, error: 'Not authorized' });
+
+  const publicId = cloudinaryPublicIdFromUrl(payslip.pdfUrl);
+  if (!publicId) return res.status(404).json({ success: false, error: 'pdf not available' });
+  const url = cloudinarySignedRawUrlFromPublicId(publicId);
+  return res.status(200).json({ success: true, url });
 });
 
 exports.getPayslips = asyncHandler(async (req, res) => {

@@ -8,7 +8,12 @@ const connectDB = async () => {
       throw new Error('Missing MONGO_URI');
     }
 
-    const conn = await mongoose.connect(uri);
+    const conn = await mongoose.connect(uri, {
+      maxPoolSize: 20,
+      minPoolSize: 5,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 5000
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     const msg = String(error && error.message ? error.message : '');
