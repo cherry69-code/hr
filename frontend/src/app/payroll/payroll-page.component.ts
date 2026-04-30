@@ -83,27 +83,35 @@ export class PayrollPageComponent implements OnInit {
     });
   }
 
-  generatePayslip(userId: string) {
+  generateAllPayslips() {
     this.loading = true;
-    const payload = { employeeId: userId, month: this.selectedMonth, year: this.selectedYear };
-    this.http.post(`${environment.apiUrl}/payroll/generate`, payload).subscribe({
+    const payload = { month: this.selectedMonth, year: this.selectedYear };
+    this.http.post(`${environment.apiUrl}/payroll/generate-all`, payload).subscribe({
       next: (res: any) => {
-        this.toast.success(`Payslip generated successfully. Net Pay: ₹${res.data.netSalary}`);
+        const ok = Number(res?.data?.ok || 0);
+        const total = Number(res?.data?.total || 0);
+        this.toast.success(`Payroll generated: ${ok}/${total}`);
         this.loading = false;
-
-        if (res.data.pdfUrl) {
-          window.open(res.data.pdfUrl, '_blank');
-        }
-
-        if (this.role === 'employee') {
-          this.loadMyPayslips();
-        } else {
-          this.payslipsByEmployeeId[String(userId)] = res.data;
-        }
+        this.loadPayslipsForMonth();
       },
       error: (err) => {
-        this.toast.error(err.error?.error || 'Failed to generate payslip');
+        this.toast.error(err.error?.error || 'Failed to generate payroll');
         this.loading = false;
+      }
+    });
+  }
+
+  downloadPayslip(payslipId: string) {
+    const id = String(payslipId || '').trim();
+    if (!id) return;
+    this.http.get(`${environment.apiUrl}/payroll/payslip/${id}/download-url`).subscribe({
+      next: (res: any) => {
+        const url = String(res?.url || '');
+        if (url) window.open(url, '_blank');
+        else this.toast.error('Download not available');
+      },
+      error: (err) => {
+        this.toast.error(err.error?.error || 'Failed to download payslip');
       }
     });
   }

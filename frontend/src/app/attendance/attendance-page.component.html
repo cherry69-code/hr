@@ -38,14 +38,15 @@
     </div>
 
     <input #fieldSelfieInput type="file" accept="image/*" capture="user" class="hidden" (change)="onFieldSelfieSelected($event)" />
+    <input #officeSelfieInput type="file" accept="image/*" capture="user" class="hidden" (change)="onOfficeSelfieSelected($event)" />
 
     <!-- Sticky button area -->
     <div class="sticky bottom-4 flex flex-col gap-3" *ngIf="!isFieldMode">
-      <button (click)="markAttendance()"
-        [disabled]="loading || todayRecord"
+      <button (click)="onPickOfficeSelfie(officeSelfieInput)"
+        [disabled]="loading || todayRecord || !withinRadius || gpsLowAccuracy"
         class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
         [ngClass]="todayRecord ? 'bg-gray-400 text-white cursor-not-allowed' : (withinRadius ? 'bg-[#16A34A] text-white hover:bg-[#15803d]' : 'bg-yellow-500 text-black hover:bg-yellow-600')">
-        {{ todayRecord ? 'Checked In' : (withinRadius ? (loading ? 'Processing...' : 'Check In') : 'Out of Range') }}
+        {{ todayRecord ? 'Checked In' : ((withinRadius && !gpsLowAccuracy) ? (loading ? 'Processing...' : 'Check In (Selfie)') : 'Out of Range') }}
       </button>
 
       <button (click)="checkOut()"

@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastService } from '../services/toast.service';
+import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
 
 @Component({
@@ -16,6 +17,7 @@ export class EmployeeListComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
   private toast = inject(ToastService);
+  private authService = inject(AuthService);
 
   employees: any[] = [];
   departments: any[] = [];
@@ -24,14 +26,27 @@ export class EmployeeListComponent implements OnInit {
   showAddModal = false;
   isEditing = false;
   currentEmployeeId: string | null = null;
+  selectedTeamId = '';
+  showTeamModal = false;
+  teamForm = { name: '', pnlHeadId: '', description: '' };
+
+  get role() {
+    return this.authService.getRole();
+  }
+
+  get canCreateTeam() {
+    return this.role === 'admin';
+  }
 
   newEmployee = {
+    employeeId: '',
     fullName: '',
     email: '',
     password: '',
     role: 'employee',
     level: 'N0',
     designation: '',
+    joiningDate: '',
     departmentId: '',
     reportingManagerId: '',
     teamId: '',
@@ -86,7 +101,9 @@ export class EmployeeListComponent implements OnInit {
 
   loadEmployees() {
     this.loading = true;
-    this.http.get(`${environment.apiUrl}/employees`).subscribe({
+    const params: any = {};
+    if (this.selectedTeamId) params.teamId = this.selectedTeamId;
+    this.http.get(`${environment.apiUrl}/employees`, { params }).subscribe({
       next: (res: any) => {
         this.employees = res.data;
         this.loading = false;
@@ -110,6 +127,53 @@ export class EmployeeListComponent implements OnInit {
     }
   }
 
+  onTeamFilterChange() {
+    this.loadEmployees();
+  }
+
+  openCreateTeamModal() {
+    if (!this.canCreateTeam) return;
+    const defaultHead = this.managers?.[0]?._id || '';
+    this.teamForm = { name: '', pnlHeadId: defaultHead, description: '' };
+    this.showTeamModal = true;
+  }
+
+  closeTeamModal() {
+    this.showTeamModal = false;
+  }
+
+  createTeam() {
+    if (!this.canCreateTeam) return;
+    const payload: any = {
+      name: String(this.teamForm.name || '').trim(),
+      pnlHeadId: String(this.teamForm.pnlHeadId || '').trim(),
+      description: String(this.teamForm.description || '').trim()
+    };
+    if (!payload.name) {
+      this.toast.error('Team name is required');
+      return;
+    }
+    if (!payload.pnlHeadId) {
+      this.toast.error('PnL head is required');
+      return;
+    }
+    if (!payload.description) delete payload.description;
+
+    this.http.post(`${environment.apiUrl}/teams`, payload).subscribe({
+      next: (res: any) => {
+        const created = res.data;
+        this.toast.success('Team created');
+        this.showTeamModal = false;
+        this.loadTeams();
+        if (created?._id) {
+          this.selectedTeamId = String(created._id);
+          this.onTeamFilterChange();
+        }
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Failed to create team')
+    });
+  }
+
   openEditModal(emp: any) {
     this.isEditing = true;
     this.currentEmployeeId = emp._id;
@@ -118,7 +182,8 @@ export class EmployeeListComponent implements OnInit {
       departmentId: emp.departmentId?._id || '',
       reportingManagerId: emp.reportingManagerId?._id || '',
       teamId: emp.teamId?._id || '',
-      password: ''
+      password: '',
+      joiningDate: emp.joiningDate ? new Date(emp.joiningDate).toISOString().split('T')[0] : ''
     };
     if (!this.newEmployee.role) this.newEmployee.role = 'employee';
     if (!this.newEmployee.level) this.newEmployee.level = 'N0';
@@ -146,12 +211,14 @@ export class EmployeeListComponent implements OnInit {
 
   resetForm() {
     this.newEmployee = {
+      employeeId: '',
       fullName: '',
       email: '',
       password: '',
       role: 'employee',
       level: 'N0',
       designation: '',
+      joiningDate: '',
       departmentId: '',
       reportingManagerId: '',
       teamId: '',

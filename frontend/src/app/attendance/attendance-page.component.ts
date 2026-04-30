@@ -41,6 +41,7 @@ export class AttendancePageComponent implements OnInit {
   isWeekend = [0, 6].includes(new Date().getDay());
   fieldLocationAddress = '';
   pendingFieldAction: 'CHECK_IN' | 'CHECK_OUT' | null = null;
+  pendingOfficeAction: 'CHECK_IN' | null = null;
 
   get isAdmin() {
     return this.role === 'admin';
@@ -195,6 +196,11 @@ export class AttendancePageComponent implements OnInit {
     fileInput.click();
   }
 
+  onPickOfficeSelfie(fileInput: HTMLInputElement) {
+    this.pendingOfficeAction = 'CHECK_IN';
+    fileInput.click();
+  }
+
   async onFieldSelfieSelected(evt: Event) {
     const input = evt.target as HTMLInputElement;
     const file = input.files && input.files[0] ? input.files[0] : null;
@@ -217,6 +223,102 @@ export class AttendancePageComponent implements OnInit {
     }
 
     this.processFieldPunch(action, imageBase64);
+  }
+
+  async onOfficeSelfieSelected(evt: Event) {
+    const input = evt.target as HTMLInputElement;
+    const file = input.files && input.files[0] ? input.files[0] : null;
+    const action = this.pendingOfficeAction;
+    this.pendingOfficeAction = null;
+    input.value = '';
+
+    if (!file || !action) return;
+    if (this.todayRecord) {
+      this.statusMessage = 'You have already checked in today.';
+      return;
+    }
+
+    const photoBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read image'));
+      reader.readAsDataURL(file);
+    }).catch(() => '');
+
+    if (!photoBase64) {
+      this.statusMessage = 'Selfie capture failed. Please try again.';
+      return;
+    }
+
+    this.loading = true;
+    this.statusMessage = 'Verifying face and location...';
+
+    const faceOk = await this.detectFace(photoBase64).catch(() => true);
+    if (!faceOk) {
+      this.loading = false;
+      this.statusMessage = 'Face not detected. Please take a clearer selfie and try again.';
+      return;
+    }
+
+    try {
+      const pos = await getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 });
+      const latitude = pos.coords.latitude;
+      const longitude = pos.coords.longitude;
+      const accuracy = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+
+      this.lastGpsFixAt = new Date();
+      this.lastGpsAccuracyMeters = accuracy;
+      this.gpsLowAccuracy = accuracy !== null && accuracy > 500;
+
+      this.computeNearest(latitude, longitude);
+      if (!this.withinRadius) {
+        this.loading = false;
+        this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
+        return;
+      }
+
+      if (!accuracy || accuracy >= 50) {
+        this.loading = false;
+        this.statusMessage = 'Location not accurate. Please refresh GPS and try again.';
+        return;
+      }
+
+      this.http
+        .post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
+          latitude,
+          longitude,
+          gpsAccuracyMeters: accuracy,
+          photoBase64,
+          faceVerified: faceOk
+        })
+        .subscribe({
+          next: () => {
+            this.loading = false;
+            this.statusMessage = 'Checked in successfully!';
+            this.loadAttendance();
+          },
+          error: (err) => {
+            this.loading = false;
+            this.statusMessage = err.error?.error || 'Check-in failed';
+          }
+        });
+    } catch {
+      this.loading = false;
+      this.statusMessage = 'Location access denied. Please enable GPS.';
+    }
+  }
+
+  async detectFace(imageDataUrl: string): Promise<boolean> {
+    const w: any = window as any;
+    if (!w.FaceDetector) return true;
+    const detector = new w.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+    const blob = await (await fetch(imageDataUrl)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const faces = await detector.detect(bitmap);
+    try {
+      bitmap.close();
+    } catch {}
+    return Array.isArray(faces) && faces.length > 0;
   }
 
   processFieldPunch(action: 'CHECK_IN' | 'CHECK_OUT', imageBase64: string) {
@@ -272,49 +374,7 @@ export class AttendancePageComponent implements OnInit {
   }
 
   markAttendance() {
-    if (!navigator.geolocation) {
-      this.statusMessage = 'Geolocation is not supported by your browser';
-      return;
-    }
-
-    if (this.todayRecord) {
-      this.statusMessage = 'You have already checked in today.';
-      return;
-    }
-
-    this.loading = true;
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
-
-        this.computeNearest(latitude, longitude);
-
-        if (!this.withinRadius) {
-          this.loading = false;
-          this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
-          return;
-        }
-
-        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, { latitude, longitude }).subscribe({
-          next: (res: any) => {
-            this.loading = false;
-            this.statusMessage = 'Checked in successfully!';
-            this.loadAttendance();
-          },
-          error: (err) => {
-            this.loading = false;
-            this.statusMessage = err.error?.error || 'Check-in failed';
-          }
-        });
-      },
-      (err) => {
-        this.loading = false;
-        this.statusMessage = 'Location access denied. Please enable GPS.';
-      },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-    );
+    this.statusMessage = 'Please take a selfie to check in.';
   }
 
   checkOut() {

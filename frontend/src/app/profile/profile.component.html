@@ -84,6 +84,10 @@
           <button (click)="sendLetter('joining_letter')" class="w-full bg-white text-blue-600 border border-blue-200 py-2 rounded-lg text-sm font-medium hover:bg-blue-50 transition">
             Send Joining Letter
           </button>
+          <button (click)="activateEmployee()" [disabled]="!canActivateEmployee"
+            class="w-full bg-[#16A34A] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#15803d] transition disabled:opacity-60">
+            Activate Employee
+          </button>
           <button (click)="isEditing = !isEditing" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition">
             {{ isEditing ? 'Cancel Editing' : 'Edit Profile' }}
           </button>
@@ -132,6 +136,10 @@
 
         <!-- Edit Form -->
         <div *ngIf="isEditing" class="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+          <div>
+            <label class="text-xs font-bold text-gray-500 uppercase">Joining Date</label>
+            <input type="date" [(ngModel)]="editForm.joiningDate" class="w-full border p-2 rounded-lg text-sm">
+          </div>
           <div class="col-span-2">
             <label class="text-xs font-bold text-gray-500 uppercase">Address</label>
             <input [(ngModel)]="editForm.personalDetails.address" class="w-full border p-2 rounded-lg text-sm">
@@ -207,7 +215,7 @@
               </div>
               <div class="flex gap-2">
                 <button *ngIf="documentsIndex?.[doc]?._id" (click)="openDocumentByType(doc)" class="text-blue-600 hover:text-blue-800 text-xs font-bold bg-blue-50 px-2 py-1 rounded">View</button>
-                <button *ngIf="canEdit && (doc === 'aadhar' || doc === 'pan' || doc === 'degreeCertificate')" (click)="triggerUpload(doc, fileInput)" class="text-gray-600 hover:text-[#16A34A] bg-gray-100 hover:bg-green-50 p-1.5 rounded transition">
+                <button *ngIf="canEdit && (doc === 'aadhar' || doc === 'pan' || doc === 'degreeCertificate' || doc === 'offer_letter' || doc === 'joining_letter')" (click)="triggerUpload(doc, fileInput)" class="text-gray-600 hover:text-[#16A34A] bg-gray-100 hover:bg-green-50 p-1.5 rounded transition">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>

@@ -10,6 +10,9 @@
         <option *ngFor="let m of months" [value]="m.value">{{ m.name }}</option>
       </select>
       <input type="number" [(ngModel)]="selectedYear" (change)="loadPayslipsForMonth()" class="border rounded-xl px-3 py-2 w-24 outline-none focus:ring-2 focus:ring-[#16A34A]">
+      <button (click)="generateAllPayslips()" [disabled]="loading" class="bg-[#16A34A] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#15803d] transition shadow-sm disabled:opacity-50">
+        {{ loading ? 'Generating...' : 'Generate Payroll' }}
+      </button>
     </div>
   </div>
 
@@ -39,12 +42,11 @@
             </td>
             <td class="p-3">
               <div class="flex items-center gap-3">
-                <a *ngIf="payslipsByEmployeeId[emp._id]?.pdfUrl" [href]="payslipsByEmployeeId[emp._id]?.pdfUrl" target="_blank" class="text-blue-600 hover:text-blue-800 font-medium underline">
+                <button *ngIf="payslipsByEmployeeId[emp._id]?._id && payslipsByEmployeeId[emp._id]?.pdfUrl" (click)="downloadPayslip(payslipsByEmployeeId[emp._id]?._id)" class="text-blue-600 hover:text-blue-800 font-medium underline">
                   Download
-                </a>
-                <button (click)="generatePayslip(emp._id)" [disabled]="loading" class="bg-[#16A34A] text-white px-4 py-1 rounded-lg font-medium hover:bg-[#15803d] transition shadow-sm disabled:opacity-50">
-                  {{ loading ? 'Generating...' : (payslipsByEmployeeId[emp._id]?.pdfUrl ? 'Regenerate' : 'Generate') }}
                 </button>
+                <span *ngIf="payslipsByEmployeeId[emp._id]?._id && !payslipsByEmployeeId[emp._id]?.pdfUrl" class="text-gray-400">Processing...</span>
+                <span *ngIf="!payslipsByEmployeeId[emp._id]?._id" class="text-gray-400">—</span>
               </div>
             </td>
           </tr>
@@ -57,9 +59,9 @@
             <td class="p-3 text-gray-600">{{ slip.month }}/{{ slip.year }}</td>
             <td class="p-3 font-semibold text-[#16A34A]">₹{{ slip.netSalary }}</td>
             <td class="p-3">
-              <a *ngIf="slip.pdfUrl" [href]="slip.pdfUrl" target="_blank" class="text-blue-600 hover:text-blue-800 font-medium underline">
+              <button *ngIf="slip._id && slip.pdfUrl" (click)="downloadPayslip(slip._id)" class="text-blue-600 hover:text-blue-800 font-medium underline">
                 Download PDF
-              </a>
+              </button>
               <span *ngIf="!slip.pdfUrl" class="text-gray-400">Processing...</span>
             </td>
           </tr>

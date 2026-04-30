@@ -27,7 +27,7 @@ export class AuthService {
     }
     const normalized = {
       ...user,
-      id: user.id || user._id || user.userId
+      id: user.id || user._id || user.userId || user.uid
     };
     this.currentUserSubject.next(normalized);
   }

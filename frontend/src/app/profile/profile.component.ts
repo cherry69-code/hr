@@ -125,7 +125,8 @@ export class ProfileComponent implements OnInit {
         bloodGroup: this.user.personalDetails?.bloodGroup || '',
         maritalStatus: this.user.personalDetails?.maritalStatus || '',
         address: this.user.address || ''
-      }
+      },
+      joiningDate: this.user.joiningDate ? new Date(this.user.joiningDate).toISOString().split('T')[0] : ''
     };
   }
 
@@ -135,13 +136,43 @@ export class ProfileComponent implements OnInit {
     return this.canEdit || isSelf;
   }
 
+  get canActivateEmployee() {
+    if (!this.canEdit) return false;
+    if (!this.user?._id) return false;
+    if (String(this.user.status || '') === 'active') return false;
+    const hasOffer = this.hasDocument('offer_letter', 'offerLetter');
+    const hasJoin = this.hasDocument('joining_letter', 'joiningLetter', 'joining_agreement', 'joiningAgreement');
+    return hasOffer && hasJoin;
+  }
+
+  activateEmployee() {
+    if (!this.canEdit || !this.user?._id) return;
+    if (!this.user.joiningDate) {
+      this.toast.error('Please set joining date before activating employee');
+      return;
+    }
+    if (!this.canActivateEmployee) {
+      this.toast.error('Offer letter and joining letter must be uploaded before activation');
+      return;
+    }
+    if (!confirm('Activate this employee now?')) return;
+    this.http.post(`${environment.apiUrl}/employees/${this.user._id}/activate`, {}).subscribe({
+      next: (res: any) => {
+        this.user = res.data;
+        this.toast.success('Employee activated');
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Failed to activate employee')
+    });
+  }
+
   // HR Only: Update Profile Details
   updateProfile() {
     if (!this.canEdit) return;
 
     const payload = {
       personalDetails: this.editForm.personalDetails,
-      address: this.editForm.personalDetails.address
+      address: this.editForm.personalDetails.address,
+      joiningDate: this.editForm.joiningDate || undefined
     };
 
     this.http.put(`${environment.apiUrl}/employees/${this.user._id}`, payload).subscribe({
@@ -248,6 +279,7 @@ export class ProfileComponent implements OnInit {
     }).subscribe({
       next: (res: any) => {
         this.user = res.data;
+        this.loadDocuments();
         this.uploading = false;
         this.toast.success(`${docType} uploaded successfully`);
       },
@@ -255,6 +287,16 @@ export class ProfileComponent implements OnInit {
         this.uploading = false;
         this.toast.error(err.error?.error || 'Upload failed');
       }
+    });
+  }
+
+  private hasDocument(...keys: string[]): boolean {
+    return keys.some((key) => {
+      const indexed = this.documentsIndex?.[key];
+      if (indexed?._id) return true;
+
+      const userDoc = this.user?.documents?.[key];
+      return Boolean(userDoc && (userDoc.publicId || userDoc.url));
     });
   }
 }

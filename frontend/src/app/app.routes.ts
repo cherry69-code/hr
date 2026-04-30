@@ -67,6 +67,11 @@ export const routes: Routes = [
         loadComponent: () => import('./payroll/payroll-page.component').then(m => m.PayrollPageComponent)
       },
       {
+        path: 'biometric',
+        loadComponent: () => import('./biometric/biometric-admin.component').then(m => m.BiometricAdminComponent),
+        data: { roles: ['admin', 'hr'] }
+      },
+      {
         path: 'incentives',
         loadComponent: () => import('./incentives/incentive-dashboard.component').then(m => m.IncentiveDashboardComponent)
       },
