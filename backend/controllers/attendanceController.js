@@ -109,8 +109,8 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   }
   const base64Data = photoBase64.replace(/^data:.+;base64,/, '');
   const approxBytes = Math.floor(base64Data.length * 0.75);
-  if (approxBytes > 3 * 1024 * 1024) {
-    return res.status(400).json({ success: false, error: 'Selfie too large (max 3MB)' });
+  if (approxBytes > 12 * 1024 * 1024) {
+    return res.status(400).json({ success: false, error: 'Selfie too large even after compression. Please retake the selfie.' });
   }
 
   if (faceVerified === false) {

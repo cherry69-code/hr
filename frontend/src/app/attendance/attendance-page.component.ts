@@ -64,9 +64,13 @@ export class AttendancePageComponent implements OnInit {
     });
   }
 
-  private async compressImage(file: File, maxBytes: number = 1024 * 1024): Promise<string> {
+  private dataUrlBytes(dataUrl: string): number {
+    return Math.floor(String(dataUrl || '').replace(/^data:.+;base64,/, '').length * 0.75);
+  }
+
+  private async compressImage(file: File, maxBytes: number = 220 * 1024): Promise<string> {
     const originalDataUrl = await this.fileToDataUrl(file);
-    if (file.size <= maxBytes) return originalDataUrl;
+    if (this.dataUrlBytes(originalDataUrl) <= maxBytes) return originalDataUrl;
 
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
@@ -75,36 +79,42 @@ export class AttendancePageComponent implements OnInit {
       img.src = originalDataUrl;
     });
 
-    const canvas = document.createElement('canvas');
-    let width = image.width;
-    let height = image.height;
-    const maxDimension = 1280;
-    if (width > height && width > maxDimension) {
-      height = Math.round((height * maxDimension) / width);
-      width = maxDimension;
-    } else if (height >= width && height > maxDimension) {
-      width = Math.round((width * maxDimension) / height);
-      height = maxDimension;
-    }
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return originalDataUrl;
-    ctx.drawImage(image, 0, 0, width, height);
-
-    const attempts = [
-      { type: 'image/jpeg', quality: 0.82 },
-      { type: 'image/jpeg', quality: 0.72 },
-      { type: 'image/jpeg', quality: 0.62 },
-      { type: 'image/jpeg', quality: 0.52 }
-    ];
-
     let best = originalDataUrl;
-    for (const attempt of attempts) {
-      const candidate = canvas.toDataURL(attempt.type, attempt.quality);
-      const candidateBytes = Math.floor(candidate.replace(/^data:.+;base64,/, '').length * 0.75);
-      best = candidate;
-      if (candidateBytes <= maxBytes) break;
+    const canvas = document.createElement('canvas');
+    const dimensions = [1280, 1024, 900, 768, 640, 540, 480, 420, 360, 320];
+    const qualities = [0.72, 0.62, 0.52, 0.42, 0.35, 0.28, 0.22];
+
+    for (const maxDimension of dimensions) {
+      let width = image.width;
+      let height = image.height;
+      if (width > height && width > maxDimension) {
+        height = Math.round((height * maxDimension) / width);
+        width = maxDimension;
+      } else if (height >= width && height > maxDimension) {
+        width = Math.round((width * maxDimension) / height);
+        height = maxDimension;
+      }
+
+      canvas.width = Math.max(1, width);
+      canvas.height = Math.max(1, height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return originalDataUrl;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      for (const quality of qualities) {
+        const candidate = canvas.toDataURL('image/jpeg', quality);
+        if (this.dataUrlBytes(candidate) < this.dataUrlBytes(best)) {
+          best = candidate;
+        }
+        if (this.dataUrlBytes(candidate) <= maxBytes) {
+          return candidate;
+        }
+      }
+    }
+
+    if (this.dataUrlBytes(best) > 3 * 1024 * 1024) {
+      throw new Error('Compressed selfie is still too large');
     }
     return best;
   }
