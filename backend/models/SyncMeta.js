@@ -21,6 +21,9 @@ const SyncMetaSchema = new mongoose.Schema({
   lastRunMessage: {
     type: String,
     trim: true
+  },
+  lastReport: {
+    type: mongoose.Schema.Types.Mixed
   }
 });
 

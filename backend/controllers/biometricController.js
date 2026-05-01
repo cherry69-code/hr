@@ -1,4 +1,5 @@
 const BiometricDevice = require('../models/BiometricDevice');
+const BiometricEmployeeMapping = require('../models/BiometricEmployeeMapping');
 const BiometricLog = require('../models/BiometricLog');
 const User = require('../models/User');
 const asyncHandler = require('../middlewares/asyncHandler');
@@ -175,4 +176,96 @@ exports.getLogs = asyncHandler(async (req, res, next) => {
   const limit = req.query.limit ? Math.min(500, Math.max(1, Number(req.query.limit))) : 100;
   const logs = await BiometricLog.find(query).sort('-punchTime').limit(limit);
   res.status(200).json({ success: true, count: logs.length, data: logs });
+});
+
+// @desc    Get biometric employee mappings + unmapped IDs
+// @route   GET /api/biometric/mappings
+// @access  Private (Admin)
+exports.getMappings = asyncHandler(async (req, res) => {
+  const BiometricSyncIssue = require('../models/BiometricSyncIssue');
+  const mappings = await BiometricEmployeeMapping.find()
+    .populate('employeeId', '_id fullName employeeId email designation status')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const unmappedIssueRows = await BiometricSyncIssue.find({
+    status: 'open',
+    issueType: { $in: ['employee_mapping_missing', 'employee_mapping_invalid'] }
+  })
+    .select('etimeUserId issueType message updatedAt')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const seen = new Set();
+  const unmappedIds = [];
+  for (const row of unmappedIssueRows) {
+    const etimeUserId = String(row.etimeUserId || '').trim();
+    if (!etimeUserId || seen.has(etimeUserId)) continue;
+    seen.add(etimeUserId);
+    unmappedIds.push({
+      etimeUserId,
+      issueType: row.issueType,
+      message: row.message || '',
+      updatedAt: row.updatedAt || null
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      mappings,
+      unmappedIds
+    }
+  });
+});
+
+// @desc    Create or update biometric employee mapping
+// @route   POST /api/biometric/mappings
+// @access  Private (Admin)
+exports.upsertMapping = asyncHandler(async (req, res) => {
+  const etimeUserId = String(req.body?.etimeUserId || '').trim();
+  const employeeId = String(req.body?.employeeId || '').trim();
+  const notes = String(req.body?.notes || '').trim();
+
+  if (!etimeUserId || !employeeId) {
+    return res.status(400).json({ success: false, error: 'etimeUserId and employeeId are required' });
+  }
+
+  const employee = await User.findById(employeeId).select('_id fullName employeeId email designation status').lean();
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'HRMS employee not found' });
+  }
+
+  const mapping = await BiometricEmployeeMapping.findOneAndUpdate(
+    { etimeUserId },
+    {
+      $set: {
+        employeeId,
+        notes,
+        active: true,
+        validatedAt: new Date()
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  )
+    .populate('employeeId', '_id fullName employeeId email designation status')
+    .lean();
+
+  await require('../models/BiometricSyncIssue').updateMany(
+    { etimeUserId, status: 'open', issueType: { $in: ['employee_mapping_missing', 'employee_mapping_invalid'] } },
+    { $set: { status: 'resolved', resolvedAt: new Date(), employeeId } }
+  ).catch(() => {});
+
+  res.status(200).json({ success: true, data: mapping });
+});
+
+// @desc    Delete biometric employee mapping
+// @route   DELETE /api/biometric/mappings/:id
+// @access  Private (Admin)
+exports.deleteMapping = asyncHandler(async (req, res) => {
+  const mapping = await BiometricEmployeeMapping.findByIdAndDelete(req.params.id);
+  if (!mapping) {
+    return res.status(404).json({ success: false, error: 'Mapping not found' });
+  }
+  res.status(200).json({ success: true, data: {} });
 });

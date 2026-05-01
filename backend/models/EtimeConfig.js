@@ -11,7 +11,8 @@ const EtimeConfigSchema = new mongoose.Schema(
     dbUser: { type: String, trim: true },
     dbPasswordEnc: { type: String, trim: true },
     startFrom: { type: Date },
-    intervalMs: { type: Number, default: 60000 },
+    intervalMs: { type: Number, default: 300000 },
+    timezone: { type: String, trim: true, default: 'Asia/Kolkata' },
     updatedAt: { type: Date, default: Date.now }
   },
   { timestamps: true }

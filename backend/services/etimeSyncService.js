@@ -2,6 +2,8 @@ const crypto = require('crypto');
 
 const BiometricDevice = require('../models/BiometricDevice');
 const BiometricLog = require('../models/BiometricLog');
+const BiometricEmployeeMapping = require('../models/BiometricEmployeeMapping');
+const BiometricSyncIssue = require('../models/BiometricSyncIssue');
 const SyncMeta = require('../models/SyncMeta');
 const User = require('../models/User');
 const Attendance = require('../models/Attendance');
@@ -14,6 +16,7 @@ const { sendAdminAlert } = require('../utils/adminAlerts');
 const { getEtimeConfig } = require('./etimeConfigService');
 
 const META_KEY = 'etime_checkinout';
+const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 
 const mapPunchType = (checkType) => {
   const t = String(checkType || '').trim().toUpperCase();
@@ -67,6 +70,102 @@ const resolveDeviceIdFromSensor = async (sensorId) => {
     .select('deviceId')
     .lean();
   return device?.deviceId || sensor;
+};
+
+const toEmployeeCode = (row) => String(row?.UserId ?? row?.USERID ?? '').trim();
+
+const toPunchTime = (row) => {
+  const raw = row?.LogDate ?? row?.LOGDATE ?? row?.CHECKTIME;
+  const dt = new Date(raw);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const toDeviceSourceId = (row) =>
+  String(row?.DeviceId ?? row?.DEVICEID ?? row?.SENSORID ?? '').trim();
+
+const getTimezone = (cfg) => {
+  const tz = String(cfg?.timezone || process.env.ETIME_TIMEZONE || DEFAULT_TIMEZONE).trim();
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date());
+    return tz;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
+};
+
+const makeIssueKey = (issueType, employeeCode, punchTime) =>
+  `${issueType}|${String(employeeCode || '').trim()}|${punchTime ? new Date(punchTime).toISOString() : 'na'}`;
+
+const upsertSyncIssue = async ({ issueType, employeeCode, punchTime, employeeId, message, rawPayload }) => {
+  const issueKey = makeIssueKey(issueType, employeeCode, punchTime);
+  await BiometricSyncIssue.findOneAndUpdate(
+    { issueKey },
+    {
+      $set: {
+        issueType,
+        status: 'open',
+        etimeUserId: String(employeeCode || '').trim(),
+        employeeId: employeeId || undefined,
+        punchTime: punchTime || undefined,
+        message: String(message || '').trim(),
+        rawPayload: rawPayload || undefined
+      },
+      $setOnInsert: {
+        retryCount: 0
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).catch(() => null);
+};
+
+const resolveEmployeeForEtimeUserId = async (etimeUserId) => {
+  const code = String(etimeUserId || '').trim();
+  if (!code) return { employee: null, mapping: null, resolution: 'missing' };
+
+  const mapping = await BiometricEmployeeMapping.findOne({ etimeUserId: code, active: true })
+    .populate('employeeId', '_id fullName employeeId email officialEmail personalEmail shiftId joiningDate')
+    .lean();
+
+  if (mapping?.employeeId?._id) {
+    return {
+      employee: mapping.employeeId,
+      mapping,
+      resolution: 'explicit'
+    };
+  }
+
+  const employee = await User.findOne({ employeeId: code })
+    .select('_id fullName employeeId email officialEmail personalEmail shiftId joiningDate')
+    .lean();
+  if (employee) {
+    return { employee, mapping: null, resolution: 'direct' };
+  }
+
+  return { employee: null, mapping: mapping || null, resolution: mapping ? 'invalid' : 'missing' };
+};
+
+const validateMappingsForBatch = async (rows) => {
+  const uniqueCodes = Array.from(
+    new Set(
+      (rows || [])
+        .map((row) => toEmployeeCode(row))
+        .filter(Boolean)
+    )
+  );
+
+  const resolutions = [];
+  for (const etimeUserId of uniqueCodes) {
+    resolutions.push({ etimeUserId, ...(await resolveEmployeeForEtimeUserId(etimeUserId)) });
+  }
+
+  const missing = resolutions.filter((r) => !r.employee);
+  return {
+    valid: missing.length === 0,
+    total: uniqueCodes.length,
+    missing,
+    explicit: resolutions.filter((r) => r.resolution === 'explicit').length,
+    direct: resolutions.filter((r) => r.resolution === 'direct').length
+  };
 };
 
 const ensureMeta = async (cfg) => {
@@ -177,23 +276,87 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
 
   const cap = maxRows ? Math.max(1, Number(maxRows)) : 20000;
   const batch = Array.isArray(rows) ? rows.slice(0, cap) : [];
+  const timezone = getTimezone(cfg);
+
+  const mappingValidation = await validateMappingsForBatch(batch);
+  if (!mappingValidation.valid) {
+    for (const missing of mappingValidation.missing) {
+      const sample = batch.find((row) => toEmployeeCode(row) === missing.etimeUserId);
+      await upsertSyncIssue({
+        issueType: missing.resolution === 'invalid' ? 'employee_mapping_invalid' : 'employee_mapping_missing',
+        employeeCode: missing.etimeUserId,
+        punchTime: toPunchTime(sample),
+        message:
+          missing.resolution === 'invalid'
+            ? `Mapped HRMS employee is invalid for eSSL UserId ${missing.etimeUserId}`
+            : `No HRMS employee mapping found for eSSL UserId ${missing.etimeUserId}`,
+        rawPayload: sample || undefined
+      });
+    }
+
+    const report = {
+      source: 'DeviceLogs',
+      timezone,
+      fetchedRows: batch.length,
+      insertedRows: 0,
+      processedDays: 0,
+      duplicateRowsSkipped: 0,
+      duplicateRowsInBatch: 0,
+      unmappedEmployeeIds: mappingValidation.missing.map((m) => m.etimeUserId),
+      mappingSummary: {
+        totalIds: mappingValidation.total,
+        explicit: mappingValidation.explicit,
+        direct: mappingValidation.direct,
+        missing: mappingValidation.missing.length
+      }
+    };
+    await SyncMeta.updateOne(
+      { key: META_KEY },
+      {
+        $set: {
+          lastRunAt: Date.now(),
+          lastRunStatus: 'error',
+          lastRunMessage: `Employee mapping validation failed for ${mappingValidation.missing.length} eSSL ID(s)`,
+          lastReport: report
+        }
+      },
+      { upsert: true }
+    );
+    const err = new Error(`Employee mapping validation failed for ${mappingValidation.missing.length} eSSL ID(s)`);
+    err.statusCode = 400;
+    throw err;
+  }
 
   const dayKeys = new Set();
   const deviceCache = new Map();
   let latestPunch = null;
 
   const writes = [];
+  const uniqueKeys = [];
+  const seenInBatch = new Set();
+  let duplicateRowsInBatch = 0;
+  let invalidRows = 0;
   for (const r of batch) {
-    const employeeCode = String(r.USERID ?? '').trim();
-    const checkTime = new Date(r.CHECKTIME);
-    if (!employeeCode || Number.isNaN(checkTime.getTime())) continue;
+    const employeeCode = toEmployeeCode(r);
+    const checkTime = toPunchTime(r);
+    if (!employeeCode || !checkTime) {
+      invalidRows += 1;
+      await upsertSyncIssue({
+        issueType: 'invalid_timestamp',
+        employeeCode,
+        punchTime: null,
+        message: 'DeviceLogs row has invalid or missing timestamp',
+        rawPayload: r
+      });
+      continue;
+    }
 
     const dk = `${employeeCode}|${ymd(checkTime)}`;
     dayKeys.add(dk);
 
     if (!latestPunch || checkTime.getTime() > latestPunch.getTime()) latestPunch = checkTime;
 
-    const sensor = String(r.SENSORID ?? '').trim();
+    const sensor = toDeviceSourceId(r);
     let deviceId = sensor || 'UNKNOWN';
     if (sensor) {
       if (deviceCache.has(sensor)) deviceId = deviceCache.get(sensor);
@@ -204,6 +367,12 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
     }
 
     const uniqueKey = `${employeeCode}|${checkTime.toISOString()}`;
+    if (seenInBatch.has(uniqueKey)) {
+      duplicateRowsInBatch += 1;
+      continue;
+    }
+    seenInBatch.add(uniqueKey);
+    uniqueKeys.push(uniqueKey);
     writes.push({
       updateOne: {
         filter: { uniqueKey },
@@ -213,6 +382,7 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
             employeeCode,
             deviceId,
             punchTime: checkTime,
+            // DeviceLogs contains raw punches only, so IN/OUT is derived later from first/last punch of day.
             punchType: mapPunchType(r.CHECKTYPE),
             verificationType: mapVerificationType(r.VERIFYCODE),
             source: 'etime',
@@ -227,8 +397,15 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
   }
 
   let upserted = 0;
+  let duplicateRowsSkipped = 0;
   if (writes.length) {
-    const result = await BiometricLog.bulkWrite(writes, { ordered: false }).catch(() => null);
+    const existingKeys = await BiometricLog.find({ uniqueKey: { $in: uniqueKeys } }).select('uniqueKey').lean();
+    const existingSet = new Set((existingKeys || []).map((row) => String(row.uniqueKey || '')));
+    duplicateRowsSkipped = existingSet.size;
+    const filteredWrites = writes.filter((w) => !existingSet.has(String(w.updateOne?.filter?.uniqueKey || '')));
+    const result = filteredWrites.length
+      ? await BiometricLog.bulkWrite(filteredWrites, { ordered: false }).catch(() => null)
+      : null;
     upserted = Number(result?.upsertedCount || 0);
   }
 
@@ -241,9 +418,18 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
     if (Number.isNaN(dayDate.getTime())) continue;
     const { start, end } = dayBounds(dayDate);
 
-    const employee = await User.findOne({ employeeId: employeeCode }).select('_id fullName employeeId email officialEmail personalEmail shiftId joiningDate').lean();
+    const resolved = await resolveEmployeeForEtimeUserId(employeeCode);
+    const employee = resolved.employee;
     if (!employee) {
-      if (enforceEmployee) continue;
+      if (enforceEmployee) {
+        await upsertSyncIssue({
+          issueType: 'employee_mapping_missing',
+          employeeCode,
+          punchTime: start,
+          message: `No HRMS employee mapping found for eSSL UserId ${employeeCode}`
+        });
+        continue;
+      }
     }
 
     const dayLogs = await BiometricLog.find({
@@ -258,7 +444,16 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
     const punches = dayLogs.map((l) => l.punchTime);
 
     const attendance = employee
-      ? await upsertAttendanceFromPunches({ employee, deviceId, day: start, punches, source: 'BIOMETRIC' })
+      ? await upsertAttendanceFromPunches({ employee, deviceId, day: start, punches, source: 'BIOMETRIC' }).catch(async (e) => {
+          await upsertSyncIssue({
+            issueType: 'sync_processing_failed',
+            employeeCode,
+            employeeId: employee._id,
+            punchTime: start,
+            message: String(e?.message || e || 'Attendance processing failed')
+          });
+          return null;
+        })
       : null;
 
     await BiometricLog.updateMany(
@@ -293,13 +488,60 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
   if (latestPunch) {
     await SyncMeta.updateOne(
       { key: META_KEY },
-      { $set: { lastSyncedTime: latestPunch, lastRunAt: Date.now(), lastRunStatus: 'ok', lastRunMessage: '' } },
+      {
+        $set: {
+          lastSyncedTime: latestPunch,
+          lastRunAt: Date.now(),
+          lastRunStatus: 'ok',
+          lastRunMessage: '',
+          lastReport: {
+            source: 'DeviceLogs',
+            timezone,
+            fetchedRows: batch.length,
+            insertedRows: upserted,
+            processedDays,
+            duplicateRowsSkipped,
+            duplicateRowsInBatch,
+            invalidRows,
+            unmappedEmployeeIds: [],
+            mappingSummary: {
+              totalIds: mappingValidation.total,
+              explicit: mappingValidation.explicit,
+              direct: mappingValidation.direct,
+              missing: 0
+            }
+          }
+        }
+      },
       { upsert: true }
     );
   } else {
     await SyncMeta.updateOne(
       { key: META_KEY },
-      { $set: { lastRunAt: Date.now(), lastRunStatus: 'ok', lastRunMessage: '' } },
+      {
+        $set: {
+          lastRunAt: Date.now(),
+          lastRunStatus: 'ok',
+          lastRunMessage: '',
+          lastReport: {
+            source: 'DeviceLogs',
+            timezone,
+            fetchedRows: batch.length,
+            insertedRows: upserted,
+            processedDays,
+            duplicateRowsSkipped,
+            duplicateRowsInBatch,
+            invalidRows,
+            unmappedEmployeeIds: [],
+            mappingSummary: {
+              totalIds: mappingValidation.total,
+              explicit: mappingValidation.explicit,
+              direct: mappingValidation.direct,
+              missing: 0
+            }
+          }
+        }
+      },
       { upsert: true }
     );
   }
@@ -321,6 +563,9 @@ exports.runEtimeSyncOnce = async ({ maxRows } = {}) => {
     fetched: batch.length,
     upserted,
     processedDays,
+    duplicateRowsSkipped,
+    duplicateRowsInBatch,
+    timezone,
     lastSyncedTime: latestPunch ? latestPunch.toISOString() : null
   };
 };
@@ -329,6 +574,45 @@ exports.getEtimeSyncStatus = async () => {
   const cfg = await getEtimeConfig().catch(() => null);
   const meta = await ensureMeta(cfg);
   return { enabled: isEnabled(cfg), meta };
+};
+
+exports.getEtimeSyncReport = async () => {
+  const cfg = await getEtimeConfig().catch(() => null);
+  const meta = await ensureMeta(cfg);
+  const openIssues = await BiometricSyncIssue.countDocuments({ status: 'open' }).catch(() => 0);
+  const mappingCount = await BiometricEmployeeMapping.countDocuments({ active: true }).catch(() => 0);
+  return {
+    timezone: getTimezone(cfg),
+    openIssues,
+    activeMappings: mappingCount,
+    report: meta?.lastReport || null,
+    meta
+  };
+};
+
+exports.retryBiometricSyncIssue = async (issueId) => {
+  const issue = await BiometricSyncIssue.findById(issueId);
+  if (!issue) {
+    const err = new Error('Sync issue not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  issue.status = 'retrying';
+  issue.retryCount = Number(issue.retryCount || 0) + 1;
+  issue.lastRetriedAt = new Date();
+  await issue.save();
+
+  const result = await exports.runEtimeSyncOnce({ maxRows: 2000 });
+
+  const fresh = await BiometricSyncIssue.findById(issueId);
+  if (fresh) {
+    fresh.status = 'resolved';
+    fresh.resolvedAt = new Date();
+    await fresh.save();
+  }
+
+  return result;
 };
 
 exports.hashDeviceToken = (tokenPlain) => {

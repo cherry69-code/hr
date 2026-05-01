@@ -8,6 +8,17 @@ const safeNumber = (v) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+const normalizeTimezone = (v) => {
+  const tz = String(v || '').trim();
+  if (!tz) return 'Asia/Kolkata';
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date());
+    return tz;
+  } catch {
+    return 'Asia/Kolkata';
+  }
+};
+
 const normalizeDriver = (v) => {
   const d = String(v || '').toLowerCase();
   if (d === 'mysql') return 'mysql';
@@ -28,7 +39,8 @@ exports.getEtimeConfig = async () => {
     user: String(doc.dbUser || '').trim(),
     password,
     startFrom: doc.startFrom ? new Date(doc.startFrom) : null,
-    intervalMs: safeNumber(doc.intervalMs) || 60000,
+    intervalMs: safeNumber(doc.intervalMs) || 300000,
+    timezone: normalizeTimezone(doc.timezone),
     updatedAt: doc.updatedAt || null
   };
 };
@@ -43,6 +55,7 @@ exports.upsertEtimeConfig = async (input) => {
   const dbName = input.dbName !== undefined ? String(input.dbName || '').trim() : undefined;
   const dbUser = input.dbUser !== undefined ? String(input.dbUser || '').trim() : undefined;
   const intervalMs = input.intervalMs !== undefined ? safeNumber(input.intervalMs) : undefined;
+  const timezone = input.timezone !== undefined ? normalizeTimezone(input.timezone) : undefined;
 
   let startFrom = undefined;
   if (input.startFrom !== undefined) {
@@ -64,6 +77,7 @@ exports.upsertEtimeConfig = async (input) => {
   if (dbName !== undefined) update.dbName = dbName;
   if (dbUser !== undefined) update.dbUser = dbUser;
   if (intervalMs !== undefined) update.intervalMs = intervalMs;
+  if (timezone !== undefined) update.timezone = timezone;
   if (startFrom !== undefined) update.startFrom = startFrom || undefined;
   if (dbPasswordEnc !== undefined) update.dbPasswordEnc = dbPasswordEnc;
 
@@ -88,7 +102,7 @@ exports.getPublicEtimeConfig = async () => {
     user: cfg.user,
     startFrom: cfg.startFrom ? cfg.startFrom.toISOString() : null,
     intervalMs: cfg.intervalMs,
+    timezone: cfg.timezone,
     updatedAt: cfg.updatedAt
   };
 };
-

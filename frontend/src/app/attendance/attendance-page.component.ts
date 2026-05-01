@@ -38,7 +38,7 @@ export class AttendancePageComponent implements OnInit {
   // Map instance (Leaflet)
   private map: any;
   private userMarker: any;
-  isWeekend = [0, 6].includes(new Date().getDay());
+  todayDay = new Date().getDay();
   fieldLocationAddress = '';
   pendingFieldAction: 'CHECK_IN' | 'CHECK_OUT' | null = null;
   pendingOfficeAction: 'CHECK_IN' | null = null;
@@ -48,13 +48,20 @@ export class AttendancePageComponent implements OnInit {
   }
 
   get isFieldMode() {
-    return this.isWeekend && !this.isAdmin;
+    return false;
+  }
+
+  get isGeoAttendanceAllowedDay() {
+    return this.todayDay !== 1;
   }
 
   ngOnInit() {
     if (!this.isAdmin) {
       this.loadAttendance();
       this.loadActiveLocations();
+      if (!this.isGeoAttendanceAllowedDay) {
+        this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
+      }
     }
   }
 
@@ -161,12 +168,12 @@ export class AttendancePageComponent implements OnInit {
     }
     this.nearestLocationName = best.location.name;
     this.nearestDistanceMeters = Math.round(best.distance);
-    // Strict policy: 20m radius only
+    const allowedRadius = Math.max(1, Number(best.location.radius || 20));
     if (this.gpsLowAccuracy) {
       this.withinRadius = false;
       return;
     }
-    this.withinRadius = best.distance <= 20;
+    this.withinRadius = best.distance <= allowedRadius;
   }
 
   getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -233,6 +240,10 @@ export class AttendancePageComponent implements OnInit {
     input.value = '';
 
     if (!file || !action) return;
+    if (!this.isGeoAttendanceAllowedDay) {
+      this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
+      return;
+    }
     if (this.todayRecord) {
       this.statusMessage = 'You have already checked in today.';
       return;
@@ -273,7 +284,7 @@ export class AttendancePageComponent implements OnInit {
       this.computeNearest(latitude, longitude);
       if (!this.withinRadius) {
         this.loading = false;
-        this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only within 20m of approved locations.`;
+        this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`;
         return;
       }
 
@@ -378,18 +389,55 @@ export class AttendancePageComponent implements OnInit {
   }
 
   checkOut() {
-    // fallback without location
-    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, {}).subscribe({
-      next: (res: any) => {
+    if (!this.isGeoAttendanceAllowedDay) {
+      this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
+      return;
+    }
+    this.loading = true;
+    this.statusMessage = 'Verifying location for check-out...';
+    getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })
+      .then((pos) => {
+        const latitude = pos.coords.latitude;
+        const longitude = pos.coords.longitude;
+        const accuracy = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+
+        this.lastGpsFixAt = new Date();
+        this.lastGpsAccuracyMeters = accuracy;
+        this.gpsLowAccuracy = accuracy !== null && accuracy > 500;
+        this.computeNearest(latitude, longitude);
+
+        if (!this.withinRadius) {
+          this.loading = false;
+          this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-out allowed only at the approved location radius.`;
+          return;
+        }
+
+        if (!accuracy || accuracy >= 50) {
+          this.loading = false;
+          this.statusMessage = 'Location not accurate. Please refresh GPS and try again.';
+          return;
+        }
+
+        this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, {
+          latitude,
+          longitude,
+          gpsAccuracyMeters: accuracy
+        }).subscribe({
+          next: () => {
+            this.loading = false;
+            this.statusMessage = 'Checked out successfully!';
+            this.loadAttendance();
+          },
+          error: (err) => {
+            this.loading = false;
+            this.statusMessage = err.error?.error || 'Check-out failed';
+          }
+        });
+      })
+      .catch(() => {
         this.loading = false;
-        this.statusMessage = 'Checked out successfully!';
-        this.loadAttendance();
-      },
-      error: (err) => {
-        this.loading = false;
-        this.statusMessage = err.error?.error || 'Check-out failed';
-      }
-    });
+        this.statusMessage = 'Location access denied. Please enable GPS.';
+      });
   }
 
   checkOutAt(latitude: number, longitude: number) {

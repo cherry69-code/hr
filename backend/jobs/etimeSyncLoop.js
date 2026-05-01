@@ -1,17 +1,24 @@
 const { runEtimeSyncOnce } = require('../services/etimeSyncService');
+const { getEtimeConfig } = require('../services/etimeConfigService');
 
 let timer = null;
 let running = false;
 
-const enabled = () => String(process.env.ETIME_SYNC_ENABLED || '').toLowerCase() === 'true';
-const intervalMs = () => {
-  const v = Number(process.env.ETIME_SYNC_INTERVAL_MS || 60000);
-  if (!Number.isFinite(v) || v < 10000) return 60000;
-  return Math.floor(v);
+const getRuntimeConfig = async () => {
+  const cfg = await getEtimeConfig().catch(() => null);
+  const envEnabled = String(process.env.ETIME_SYNC_ENABLED || '').toLowerCase() === 'true';
+  const cfgEnabled = cfg && cfg.enabled !== undefined ? Boolean(cfg.enabled) : undefined;
+  const rawInterval = cfg?.intervalMs ?? process.env.ETIME_SYNC_INTERVAL_MS ?? 300000;
+  const interval = Number(rawInterval);
+  return {
+    enabled: cfgEnabled !== undefined ? cfgEnabled : envEnabled,
+    intervalMs: Number.isFinite(interval) && interval >= 10000 ? Math.floor(interval) : 300000
+  };
 };
 
 const tick = async () => {
-  if (!enabled()) return;
+  const runtime = await getRuntimeConfig();
+  if (!runtime.enabled) return;
   if (running) return;
   running = true;
   try {
@@ -31,14 +38,22 @@ const tick = async () => {
   }
 };
 
+const scheduleNext = async () => {
+  const runtime = await getRuntimeConfig();
+  timer = setTimeout(async () => {
+    await tick();
+    await scheduleNext();
+  }, runtime.intervalMs);
+};
+
 exports.start = () => {
   if (timer) return;
-  timer = setInterval(tick, intervalMs());
   tick();
+  scheduleNext();
 };
 
 exports.stop = () => {
   if (!timer) return;
-  clearInterval(timer);
+  clearTimeout(timer);
   timer = null;
 };

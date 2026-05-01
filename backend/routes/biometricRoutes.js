@@ -2,11 +2,14 @@ const express = require('express');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const {
   addDevice,
+  getMappings,
+  upsertMapping,
+  deleteMapping,
   getDevices,
   processPunch,
   getLogs
 } = require('../controllers/biometricController');
-const { getSyncStatus, runSyncNow, setDeviceToken } = require('../controllers/etimeSyncController');
+const { getSyncStatus, getSyncReport, getSyncIssues, retrySyncIssue, runSyncNow, setDeviceToken } = require('../controllers/etimeSyncController');
 const { getConfig, updateConfig, testConnection } = require('../controllers/etimeConfigController');
 
 const router = express.Router();
@@ -42,10 +45,18 @@ router.route('/devices')
   .get(getDevices)
   .post(addDevice);
 
+router.route('/mappings')
+  .get(getMappings)
+  .post(upsertMapping);
+router.delete('/mappings/:id', deleteMapping);
+
 router.route('/logs')
   .get(getLogs);
 
 router.get('/sync/status', getSyncStatus);
+router.get('/sync/report', getSyncReport);
+router.get('/sync/issues', getSyncIssues);
+router.post('/sync/issues/:id/retry', retrySyncIssue);
 router.post('/sync/run', runSyncNow);
 router.post('/devices/:deviceId/token', setDeviceToken);
 router.get('/etime-config', getConfig);

@@ -5,6 +5,53 @@ const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 
+const isGeoAttendanceAllowedDay = (date) => {
+  const day = new Date(date).getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  return day !== 1; // Tuesday to Sunday
+};
+
+const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationId }) => {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  const locations = await Location.find({ active: true })
+    .select('latitude longitude name radius')
+    .lean();
+
+  if (!locations.length) {
+    return { error: 'No attendance locations configured.' };
+  }
+
+  let best = null;
+  let matched = null;
+
+  for (const loc of locations) {
+    const distance = getDistance(lat, lng, loc.latitude, loc.longitude);
+    const radius = Math.max(1, Number(loc.radius || 20));
+
+    if (!best || distance < best.distance) {
+      best = { location: loc, distance };
+    }
+
+    if (distance <= radius) {
+      if (!matched || distance < matched.distance) {
+        matched = { location: loc, distance };
+      }
+    }
+  }
+
+  if (selectedLocationId) {
+    const selected = locations.find((loc) => String(loc._id) === String(selectedLocationId));
+    if (selected) {
+      const selectedDistance = getDistance(lat, lng, selected.latitude, selected.longitude);
+      const selectedRadius = Math.max(1, Number(selected.radius || 20));
+      best = { location: selected, distance: selectedDistance };
+      matched = selectedDistance <= selectedRadius ? { location: selected, distance: selectedDistance } : null;
+    }
+  }
+
+  return { best, matched };
+};
+
 // @desc    Mark attendance (Check-in)
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
@@ -49,8 +96,13 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'Employee not found' });
   }
 
+  const now = new Date();
+  if (!isGeoAttendanceAllowedDay(now)) {
+    return res.status(400).json({ success: false, error: 'Geo attendance is allowed only from Tuesday to Sunday' });
+  }
+
   // Check if already checked in today (One Punch-In Policy)
-  const startOfDay = new Date();
+  const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
   const existingAttendance = await Attendance.findOne({
     employeeId,
@@ -61,72 +113,22 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'You have already checked in today.' });
   }
 
-  // 2. Validate against configured locations
-  const locations = await Location.find({ active: true })
-    .select('latitude longitude name radius')
-    .lean();
-    
-  if (!locations.length) {
-    return res.status(400).json({ success: false, error: 'No attendance locations configured.' });
+  const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
+  if (locationResult.error) {
+    return res.status(400).json({ success: false, error: locationResult.error });
   }
-
-  // Find NEAREST active location (Multi-location support)
-  // Instead of checking against a specific assigned geofence, we check against ALL active locations.
-  // If user is within range of ANY active location, check-in is valid.
-  
-  let best = null;
-  let withinRangeOfAny = false;
-
-  const STRICT_RADIUS = 100; // Enforced radius
-  for (const loc of locations) {
-    const distance = getDistance(lat, lng, loc.latitude, loc.longitude);
-    const radius = STRICT_RADIUS;
-    
-    if (distance <= radius) {
-      withinRangeOfAny = true;
-      best = { location: loc, distance }; // Found a valid one, we can break or keep looking for closer? 
-      // Usually first match is enough or closest match. Let's find closest match anyway for reporting.
-    }
-
-    if (!best || distance < best.distance) {
-      best = { location: loc, distance };
-    }
-  }
-
-  const day = new Date().getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  
-  const isWeeklyOff = day === 1;
-  const isBiometricOnly = [2, 3, 4, 5].includes(day);
-
-  let locationValidated = false;
-
-  // If HR explicitly selected a location for off-site mapping, honor it
-  let overrideLocation = null;
-  if (selectedLocationId) {
-    overrideLocation = locations.find(l => String(l._id) === String(selectedLocationId)) || null;
-    if (overrideLocation) {
-      best = { location: overrideLocation, distance: getDistance(lat, lng, overrideLocation.latitude, overrideLocation.longitude) };
-    }
-  }
-
-  if (withinRangeOfAny) {
-    locationValidated = true; // Within range of at least one office
-  } else {
+  const { best, matched } = locationResult;
+  const locationValidated = Boolean(matched);
+  if (!locationValidated) {
     // New policy: Off-site or any check-in allowed ONLY within 100m of approved locations
     return res.status(400).json({
       success: false,
-      error: `Check-in Failed: Allowed only within 100m of approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
+      error: `Check-in allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
     });
-  }
-  
-  // If remote allowed (Tue-Fri) OR it's Monday -> Proceed.
-  if (isBiometricOnly) {
-    return res.status(400).json({ success: false, error: 'Biometric attendance is mandatory on Tue-Fri' });
   }
 
   // 3. Status Logic (Half Day vs Present)
   // Max Login Time: 10:00 AM
-  const now = new Date();
   const loginThreshold = new Date();
   loginThreshold.setHours(10, 0, 0, 0);
 
@@ -134,9 +136,6 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   const lateFlag = now.getTime() > loginThreshold.getTime();
   const lateMinutes = lateFlag ? Math.floor((now.getTime() - loginThreshold.getTime()) / (1000 * 60)) : 0;
   if (lateFlag) status = 'Half Day';
-  if (isWeeklyOff) {
-    status = 'Weekly Off Work'; // Or keep 'Present' / 'Overtime'
-  }
 
   let photoUrl = '';
   try {
@@ -162,8 +161,8 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     latitude: lat,
     longitude: lng,
     gpsAccuracyMeters: acc !== null ? acc : undefined,
-    locationId: best.location._id, // Store nearest or explicitly selected location
-    locationName: locationValidated ? best.location.name : `Remote (Nearest: ${best.location.name})`,
+    locationId: matched.location._id,
+    locationName: matched.location.name,
     status,
     locationValidated,
     insideRadius: locationValidated,
@@ -180,9 +179,24 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 // @access  Private
 exports.checkOut = asyncHandler(async (req, res, next) => {
   const employeeId = req.params.employeeId;
-  const { latitude, longitude } = req.body || {};
+  const { latitude, longitude, gpsAccuracyMeters, selectedLocationId } = req.body || {};
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  const acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  if (!isGeoAttendanceAllowedDay(today)) {
+    return res.status(400).json({ success: false, error: 'Geo attendance is allowed only from Tuesday to Sunday' });
+  }
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ success: false, error: 'Please provide location coordinates for check-out' });
+  }
+
+  if (acc !== null && (!Number.isFinite(acc) || acc >= 50)) {
+    return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
+  }
 
   // Find attendance for today (even if already checked out)
   const attendance = await Attendance.findOne({
@@ -194,13 +208,27 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'No active check-in found for today' });
   }
 
+  const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
+  if (locationResult.error) {
+    return res.status(400).json({ success: false, error: locationResult.error });
+  }
+  const { best, matched } = locationResult;
+  if (!matched) {
+    return res.status(400).json({
+      success: false,
+      error: `Check-out allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
+    });
+  }
+
   // Always update to the LATEST check-out time
   const checkOutTime = new Date();
   attendance.checkOutTime = checkOutTime;
-  if (latitude && longitude) {
-    attendance.checkOutLatitude = latitude;
-    attendance.checkOutLongitude = longitude;
-  }
+  attendance.checkOutLatitude = lat;
+  attendance.checkOutLongitude = lng;
+  attendance.locationValidated = true;
+  attendance.insideRadius = true;
+  attendance.locationId = matched.location._id;
+  attendance.locationName = matched.location.name;
   
   // Calculate Duration
   const durationMs = checkOutTime - new Date(attendance.checkInTime);
