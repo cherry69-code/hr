@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -15,10 +15,12 @@ import { getBestPosition } from '../utils/geolocation';
   imports: [CommonModule, FormsModule, LocationsPageComponent],
   templateUrl: './attendance-page.component.html'
 })
-export class AttendancePageComponent implements OnInit {
+export class AttendancePageComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private authService = inject(AuthService);
   private toast = inject(ToastService);
+  @ViewChild('cameraVideo') cameraVideo?: ElementRef<HTMLVideoElement>;
+  @ViewChild('captureCanvas') captureCanvas?: ElementRef<HTMLCanvasElement>;
 
   role = this.authService.getRole();
   attendanceRecords: any[] = [];
@@ -42,6 +44,11 @@ export class AttendancePageComponent implements OnInit {
   fieldLocationAddress = '';
   pendingFieldAction: 'CHECK_IN' | 'CHECK_OUT' | null = null;
   pendingOfficeAction: 'CHECK_IN' | null = null;
+  showCameraCapture = false;
+  cameraBusy = false;
+  cameraError = '';
+  cameraTarget: 'office' | 'field' | null = null;
+  private cameraStream: MediaStream | null = null;
 
   get isAdmin() {
     return this.role === 'admin';
@@ -127,6 +134,10 @@ export class AttendancePageComponent implements OnInit {
         this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
       }
     }
+  }
+
+  ngOnDestroy() {
+    this.stopCameraStream();
   }
 
   loadAttendance() {
@@ -264,12 +275,132 @@ export class AttendancePageComponent implements OnInit {
 
   onPickFieldSelfie(action: 'CHECK_IN' | 'CHECK_OUT', fileInput: HTMLInputElement) {
     this.pendingFieldAction = action;
-    fileInput.click();
+    this.openCameraCapture('field', fileInput);
   }
 
   onPickOfficeSelfie(fileInput: HTMLInputElement) {
     this.pendingOfficeAction = 'CHECK_IN';
-    fileInput.click();
+    this.openCameraCapture('office', fileInput);
+  }
+
+  private canUseCameraCapture(): boolean {
+    return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  }
+
+  private openCameraCapture(target: 'office' | 'field', fallbackInput: HTMLInputElement) {
+    if (!this.canUseCameraCapture()) {
+      fallbackInput.click();
+      return;
+    }
+    this.cameraTarget = target;
+    this.showCameraCapture = true;
+    this.cameraBusy = true;
+    this.cameraError = '';
+    this.startCameraStream().catch(() => {
+      this.cameraBusy = false;
+      this.showCameraCapture = false;
+      this.cameraTarget = null;
+      fallbackInput.click();
+    });
+  }
+
+  private async startCameraStream() {
+    this.stopCameraStream();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 640, max: 640 },
+        height: { ideal: 480, max: 480 },
+        frameRate: { ideal: 12, max: 15 }
+      },
+      audio: false
+    });
+    this.cameraStream = stream;
+
+    setTimeout(async () => {
+      const video = this.cameraVideo?.nativeElement;
+      if (!video || !this.cameraStream) return;
+      video.srcObject = this.cameraStream;
+      try {
+        await video.play();
+        this.cameraBusy = false;
+      } catch {
+        this.cameraError = 'Unable to start camera preview.';
+        this.cameraBusy = false;
+      }
+    }, 0);
+  }
+
+  cancelCameraCapture() {
+    this.showCameraCapture = false;
+    this.cameraBusy = false;
+    this.cameraError = '';
+    this.cameraTarget = null;
+    this.stopCameraStream();
+  }
+
+  private stopCameraStream() {
+    if (!this.cameraStream) return;
+    for (const track of this.cameraStream.getTracks()) {
+      try {
+        track.stop();
+      } catch {}
+    }
+    this.cameraStream = null;
+    const video = this.cameraVideo?.nativeElement;
+    if (video) {
+      try {
+        video.pause();
+      } catch {}
+      video.srcObject = null;
+    }
+  }
+
+  private canvasToFile(dataUrl: string, fileName: string): File {
+    const parts = dataUrl.split(',');
+    const mime = (parts[0].match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+    const binary = atob(parts[1] || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], fileName, { type: mime });
+  }
+
+  async captureSelfie() {
+    if (this.cameraBusy) return;
+    const video = this.cameraVideo?.nativeElement;
+    const canvas = this.captureCanvas?.nativeElement;
+    if (!video || !canvas) {
+      this.cameraError = 'Camera not ready.';
+      return;
+    }
+
+    this.cameraBusy = true;
+    this.cameraError = '';
+    const width = Math.max(240, Math.min(480, video.videoWidth || 480));
+    const height = Math.max(320, Math.min(640, video.videoHeight || 640));
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      this.cameraBusy = false;
+      this.cameraError = 'Camera capture failed.';
+      return;
+    }
+
+    ctx.drawImage(video, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
+    const file = this.canvasToFile(dataUrl, `selfie-${Date.now()}.jpg`);
+
+    this.stopCameraStream();
+    this.showCameraCapture = false;
+    this.cameraBusy = false;
+
+    if (this.cameraTarget === 'office') {
+      await this.handleOfficeSelfieFile(file);
+    } else if (this.cameraTarget === 'field') {
+      await this.handleFieldSelfieFile(file);
+    }
+    this.cameraTarget = null;
   }
 
   async onFieldSelfieSelected(evt: Event) {
@@ -280,15 +411,7 @@ export class AttendancePageComponent implements OnInit {
     input.value = '';
 
     if (!file || !action) return;
-
-    const imageBase64 = await this.compressImage(file).catch(() => '');
-
-    if (!imageBase64) {
-      this.statusMessage = 'Selfie capture failed. Please try again.';
-      return;
-    }
-
-    this.processFieldPunch(action, imageBase64);
+    await this.handleFieldSelfieFile(file);
   }
 
   async onOfficeSelfieSelected(evt: Event) {
@@ -298,6 +421,26 @@ export class AttendancePageComponent implements OnInit {
     this.pendingOfficeAction = null;
     input.value = '';
 
+    if (!file || !action) return;
+    await this.handleOfficeSelfieFile(file);
+  }
+
+  private async handleFieldSelfieFile(file: File) {
+    const action = this.pendingFieldAction;
+    this.pendingFieldAction = null;
+    if (!file || !action) return;
+
+    const imageBase64 = await this.compressImage(file).catch(() => '');
+    if (!imageBase64) {
+      this.statusMessage = 'Selfie capture failed. Please try again.';
+      return;
+    }
+    this.processFieldPunch(action, imageBase64);
+  }
+
+  private async handleOfficeSelfieFile(file: File) {
+    const action = this.pendingOfficeAction;
+    this.pendingOfficeAction = null;
     if (!file || !action) return;
     if (!this.isGeoAttendanceAllowedDay) {
       this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
@@ -309,7 +452,6 @@ export class AttendancePageComponent implements OnInit {
     }
 
     const photoBase64 = await this.compressImage(file).catch(() => '');
-
     if (!photoBase64) {
       this.statusMessage = 'Selfie capture failed. Please try again.';
       return;
