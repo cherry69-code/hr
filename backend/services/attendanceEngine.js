@@ -24,7 +24,7 @@ const minutesDiff = (a, b) => Math.floor((a.getTime() - b.getTime()) / (1000 * 6
 const getShiftForEmployee = async (employee) => {
   const fallback = {
     shiftStart: String(process.env.SHIFT_START || '10:00'),
-    shiftEnd: String(process.env.SHIFT_END || '19:00'),
+    shiftEnd: String(process.env.SHIFT_END || '18:30'),
     graceMinutes: Number(process.env.SHIFT_GRACE_MINUTES || 15)
   };
 
@@ -68,8 +68,8 @@ exports.upsertAttendanceFromPunches = async ({ employee, deviceId, day, punches,
   const missedPunch = sorted.length === 1;
 
   const shift = await getShiftForEmployee(employee);
-  const shiftStart = buildTimeOnDate(startOfDay, '10:00');
-  const shiftEnd = buildTimeOnDate(startOfDay, shift.shiftEnd || '19:00');
+  const shiftStart = buildTimeOnDate(startOfDay, shift.shiftStart || '10:00');
+  const shiftEnd = buildTimeOnDate(startOfDay, shift.shiftEnd || '18:30');
 
   const workingMinutes = checkOutTime ? Math.max(0, minutesDiff(checkOutTime, checkInTime)) : 0;
   const lateMinutesRaw = shiftStart ? Math.max(0, minutesDiff(checkInTime, shiftStart)) : 0;
@@ -84,12 +84,8 @@ exports.upsertAttendanceFromPunches = async ({ employee, deviceId, day, punches,
     status = 'Weekly Off Work';
   } else if (missedPunch) {
     status = 'Missed Punch';
-  } else if (lateFlag) {
-    status = 'Half Day';
-  } else if (workingMinutes < 360) {
-    status = 'Half Day';
   } else {
-    status = 'Present';
+    status = !lateFlag && checkOutTime && shiftEnd && checkOutTime.getTime() >= shiftEnd.getTime() ? 'Present' : 'Half Day';
   }
 
   const existing = await Attendance.findOne({

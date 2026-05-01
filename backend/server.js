@@ -1,6 +1,7 @@
 const app = require('./app');
 const connectDB = require('./config/db');
 const etimeSyncLoop = require('./jobs/etimeSyncLoop');
+const attendanceSelfieCleanup = require('./jobs/attendanceSelfieCleanup');
 
 (async () => {
   try {
@@ -12,6 +13,7 @@ const etimeSyncLoop = require('./jobs/etimeSyncLoop');
     });
 
     etimeSyncLoop.start();
+    attendanceSelfieCleanup.start();
 
     process.on('unhandledRejection', (err) => {
       console.log(`Error: ${err.message}`);

@@ -3,6 +3,10 @@ const FieldAttendanceLog = require('../models/FieldAttendanceLog');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 
+const CHECK_IN_CUTOFF_HOUR = 10;
+const CHECK_OUT_CUTOFF_HOUR = 18;
+const CHECK_OUT_CUTOFF_MINUTE = 30;
+
 const isWeekend = (d) => {
   const day = d.getDay();
   return day === 0 || day === 6;
@@ -37,12 +41,17 @@ const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
 };
 
 const uploadSelfie = async (employeeCode, imageBase64) => {
-  if (!imageBase64) return '';
+  if (!imageBase64) return { url: '', publicId: '' };
   const result = await cloudinary.uploader.upload(imageBase64, {
     folder: 'attendance/field',
+    resource_type: 'image',
+    type: 'private',
     public_id: `${employeeCode}_${Date.now()}`
   });
-  return result?.secure_url || '';
+  return {
+    url: result?.secure_url || '',
+    publicId: result?.public_id || ''
+  };
 };
 
 const validateFace = ({ faceVerified, faceSimilarity, livenessVerified }) => {
@@ -70,8 +79,8 @@ const validateGps = ({ latitude, longitude, gpsAccuracyMeters }) => {
 
 const computeStatus = (checkInTime) => {
   const threshold = new Date(checkInTime);
-  threshold.setHours(10, 30, 0, 0);
-  return checkInTime > threshold ? 'Late' : 'Present';
+  threshold.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
+  return new Date(checkInTime).getTime() > threshold.getTime() ? 'Half Day' : 'Present';
 };
 
 exports.fieldCheckIn = asyncHandler(async (req, res) => {
@@ -104,7 +113,7 @@ exports.fieldCheckIn = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'You have already checked in today.' });
   }
 
-  const selfieUrl = await uploadSelfie(employeeCode, imageBase64);
+  const selfie = await uploadSelfie(employeeCode, imageBase64);
 
   const attendance = await Attendance.create({
     employeeId,
@@ -115,7 +124,8 @@ exports.fieldCheckIn = asyncHandler(async (req, res) => {
     locationName: locationAddress || 'Field',
     locationValidated: true,
     insideRadius: true,
-    photoUrl: selfieUrl,
+    photoUrl: selfie.url,
+    photoPublicId: selfie.publicId,
     source: 'FIELD_FACE_GPS',
     status: computeStatus(now)
   });
@@ -132,7 +142,8 @@ exports.fieldCheckIn = asyncHandler(async (req, res) => {
     faceVerified: true,
     faceSimilarity: face.similarity,
     livenessVerified: true,
-    imageUrl: selfieUrl,
+    imageUrl: selfie.url,
+    imagePublicId: selfie.publicId,
     deviceType: deviceType || 'mobile',
     source: 'FIELD_FACE_GPS'
   });
@@ -186,7 +197,7 @@ exports.fieldCheckOut = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'GPS location unchanged for long duration. Please refresh GPS and try again.' });
   }
 
-  const selfieUrl = await uploadSelfie(employeeCode, imageBase64);
+  const selfie = await uploadSelfie(employeeCode, imageBase64);
 
   const currentOut = attendance.checkOutTime ? new Date(attendance.checkOutTime) : null;
   if (!currentOut || Number.isNaN(currentOut.getTime()) || now > currentOut) {
@@ -197,6 +208,15 @@ exports.fieldCheckOut = asyncHandler(async (req, res) => {
 
   attendance.locationName = locationAddress || attendance.locationName || 'Field';
   attendance.source = 'FIELD_FACE_GPS';
+  const lateThreshold = new Date(checkInTime);
+  lateThreshold.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
+  const outThreshold = new Date(checkInTime);
+  outThreshold.setHours(CHECK_OUT_CUTOFF_HOUR, CHECK_OUT_CUTOFF_MINUTE, 0, 0);
+  attendance.lateFlag = checkInTime.getTime() > lateThreshold.getTime();
+  attendance.lateMinutes = attendance.lateFlag ? Math.floor((checkInTime.getTime() - lateThreshold.getTime()) / (1000 * 60)) : 0;
+  attendance.earlyExitMinutes = Math.max(0, Math.floor((outThreshold.getTime() - now.getTime()) / (1000 * 60)));
+  attendance.workingMinutes = Math.max(0, Math.floor(durationMs / (1000 * 60)));
+  attendance.status = !attendance.lateFlag && now.getTime() >= outThreshold.getTime() ? 'Present' : 'Half Day';
   await attendance.save();
 
   await FieldAttendanceLog.create({
@@ -211,7 +231,8 @@ exports.fieldCheckOut = asyncHandler(async (req, res) => {
     faceVerified: true,
     faceSimilarity: face.similarity,
     livenessVerified: true,
-    imageUrl: selfieUrl,
+    imageUrl: selfie.url,
+    imagePublicId: selfie.publicId,
     deviceType: deviceType || 'mobile',
     source: 'FIELD_FACE_GPS'
   });

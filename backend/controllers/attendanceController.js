@@ -5,6 +5,10 @@ const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 
+const CHECK_IN_CUTOFF_HOUR = 10;
+const CHECK_OUT_CUTOFF_HOUR = 18;
+const CHECK_OUT_CUTOFF_MINUTE = 30;
+
 const isGeoAttendanceAllowedDay = (date) => {
   const day = new Date(date).getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   return day !== 1; // Tuesday to Sunday
@@ -50,6 +54,30 @@ const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationI
   }
 
   return { best, matched };
+};
+
+const getCheckInCutoff = (date) => {
+  const d = new Date(date);
+  d.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
+  return d;
+};
+
+const getCheckOutCutoff = (date) => {
+  const d = new Date(date);
+  d.setHours(CHECK_OUT_CUTOFF_HOUR, CHECK_OUT_CUTOFF_MINUTE, 0, 0);
+  return d;
+};
+
+const getAttendanceStatus = ({ checkInTime, checkOutTime }) => {
+  const inCutoff = getCheckInCutoff(checkInTime);
+  const outCutoff = getCheckOutCutoff(checkInTime);
+  const lateFlag = new Date(checkInTime).getTime() > inCutoff.getTime();
+  const lateMinutes = lateFlag ? Math.floor((new Date(checkInTime).getTime() - inCutoff.getTime()) / (1000 * 60)) : 0;
+  const earlyExitMinutes = checkOutTime
+    ? Math.max(0, Math.floor((outCutoff.getTime() - new Date(checkOutTime).getTime()) / (1000 * 60)))
+    : 0;
+  const status = !lateFlag && checkOutTime && new Date(checkOutTime).getTime() >= outCutoff.getTime() ? 'Present' : 'Half Day';
+  return { status, lateFlag, lateMinutes, earlyExitMinutes };
 };
 
 // @desc    Mark attendance (Check-in)
@@ -129,15 +157,10 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 
   // 3. Status Logic (Half Day vs Present)
   // Max Login Time: 10:00 AM
-  const loginThreshold = new Date();
-  loginThreshold.setHours(10, 0, 0, 0);
-
-  let status = 'Present';
-  const lateFlag = now.getTime() > loginThreshold.getTime();
-  const lateMinutes = lateFlag ? Math.floor((now.getTime() - loginThreshold.getTime()) / (1000 * 60)) : 0;
-  if (lateFlag) status = 'Half Day';
+  const statusInfo = getAttendanceStatus({ checkInTime: now, checkOutTime: null });
 
   let photoUrl = '';
+  let photoPublicId = '';
   try {
     const uploaded = await cloudinary.uploader.upload(photoBase64, {
       folder: 'attendance/office',
@@ -146,6 +169,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
       public_id: `${employee.employeeId || employee._id}_${Date.now()}`
     });
     photoUrl = uploaded.secure_url || '';
+    photoPublicId = uploaded.public_id || '';
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Selfie upload failed' });
   }
@@ -156,17 +180,19 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     date: now,
     checkInTime: now,
     workingMinutes: 0,
-    lateMinutes,
-    lateFlag,
+    lateMinutes: statusInfo.lateMinutes,
+    lateFlag: statusInfo.lateFlag,
+    earlyExitMinutes: statusInfo.earlyExitMinutes,
     latitude: lat,
     longitude: lng,
     gpsAccuracyMeters: acc !== null ? acc : undefined,
     locationId: matched.location._id,
     locationName: matched.location.name,
-    status,
+    status: statusInfo.status,
     locationValidated,
     insideRadius: locationValidated,
     photoUrl,
+    photoPublicId,
     faceVerified: faceVerified !== undefined ? Boolean(faceVerified) : true,
     source: 'OFFICE_FACE_WEB'
   });
@@ -233,31 +259,17 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   // Calculate Duration
   const durationMs = checkOutTime - new Date(attendance.checkInTime);
 
-  const loginThreshold = new Date(attendance.date);
-  loginThreshold.setHours(10, 0, 0, 0);
   const checkInTime = new Date(attendance.checkInTime);
-
-  const lateFlag = checkInTime.getTime() > loginThreshold.getTime();
-  const lateMinutes = lateFlag ? Math.floor((checkInTime.getTime() - loginThreshold.getTime()) / (1000 * 60)) : 0;
-
   const workingMinutes = Math.max(0, Math.floor(durationMs / (1000 * 60)));
-  const shiftEnd = new Date(attendance.date);
-  shiftEnd.setHours(19, 0, 0, 0);
-  const earlyExitMinutes = Math.max(0, Math.floor((shiftEnd.getTime() - checkOutTime.getTime()) / (1000 * 60)));
+  const statusInfo = getAttendanceStatus({ checkInTime, checkOutTime });
 
   attendance.workingMinutes = workingMinutes;
-  attendance.lateFlag = lateFlag;
-  attendance.lateMinutes = lateMinutes;
-  attendance.earlyExitMinutes = earlyExitMinutes;
+  attendance.lateFlag = statusInfo.lateFlag;
+  attendance.lateMinutes = statusInfo.lateMinutes;
+  attendance.earlyExitMinutes = statusInfo.earlyExitMinutes;
 
   if (attendance.status !== 'Weekly Off Work') {
-    if (lateFlag) {
-      attendance.status = 'Half Day';
-    } else if (workingMinutes < 360) {
-      attendance.status = 'Half Day';
-    } else {
-      attendance.status = 'Present';
-    }
+    attendance.status = statusInfo.status;
   }
 
   await attendance.save();

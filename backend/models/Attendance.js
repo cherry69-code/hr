@@ -51,6 +51,11 @@ const AttendanceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  photoPublicId: {
+    type: String,
+    trim: true,
+    index: true
+  },
   faceVerified: {
     type: Boolean,
     default: false

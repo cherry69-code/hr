@@ -55,6 +55,60 @@ export class AttendancePageComponent implements OnInit {
     return this.todayDay !== 1;
   }
 
+  private async fileToDataUrl(file: File): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read image'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  private async compressImage(file: File, maxBytes: number = 1024 * 1024): Promise<string> {
+    const originalDataUrl = await this.fileToDataUrl(file);
+    if (file.size <= maxBytes) return originalDataUrl;
+
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = originalDataUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    let width = image.width;
+    let height = image.height;
+    const maxDimension = 1280;
+    if (width > height && width > maxDimension) {
+      height = Math.round((height * maxDimension) / width);
+      width = maxDimension;
+    } else if (height >= width && height > maxDimension) {
+      width = Math.round((width * maxDimension) / height);
+      height = maxDimension;
+    }
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return originalDataUrl;
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const attempts = [
+      { type: 'image/jpeg', quality: 0.82 },
+      { type: 'image/jpeg', quality: 0.72 },
+      { type: 'image/jpeg', quality: 0.62 },
+      { type: 'image/jpeg', quality: 0.52 }
+    ];
+
+    let best = originalDataUrl;
+    for (const attempt of attempts) {
+      const candidate = canvas.toDataURL(attempt.type, attempt.quality);
+      const candidateBytes = Math.floor(candidate.replace(/^data:.+;base64,/, '').length * 0.75);
+      best = candidate;
+      if (candidateBytes <= maxBytes) break;
+    }
+    return best;
+  }
+
   ngOnInit() {
     if (!this.isAdmin) {
       this.loadAttendance();
@@ -217,12 +271,7 @@ export class AttendancePageComponent implements OnInit {
 
     if (!file || !action) return;
 
-    const imageBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Failed to read image'));
-      reader.readAsDataURL(file);
-    }).catch(() => '');
+    const imageBase64 = await this.compressImage(file).catch(() => '');
 
     if (!imageBase64) {
       this.statusMessage = 'Selfie capture failed. Please try again.';
@@ -249,12 +298,7 @@ export class AttendancePageComponent implements OnInit {
       return;
     }
 
-    const photoBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Failed to read image'));
-      reader.readAsDataURL(file);
-    }).catch(() => '');
+    const photoBase64 = await this.compressImage(file).catch(() => '');
 
     if (!photoBase64) {
       this.statusMessage = 'Selfie capture failed. Please try again.';

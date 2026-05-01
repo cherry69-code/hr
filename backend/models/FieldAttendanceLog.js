@@ -53,6 +53,11 @@ const FieldAttendanceLogSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  imagePublicId: {
+    type: String,
+    trim: true,
+    index: true
+  },
   deviceType: {
     type: String,
     default: 'mobile',
