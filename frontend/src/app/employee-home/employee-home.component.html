@@ -107,9 +107,12 @@
                    'bg-yellow-50 text-yellow-700 border border-yellow-100': day.status === 'late',
                    'bg-gray-100 text-gray-500': day.status === 'weekend',
                    'bg-blue-50 text-blue-700 border border-blue-100': day.status === 'holiday',
-                   'bg-purple-50 text-purple-700 border border-purple-100': day.status === 'leave'
+                   'bg-purple-50 text-purple-700 border border-purple-100': day.status === 'leave',
+                   'ring-2 ring-[#0F172A]': selectedCalendarDay?.date && day.date && (day.date.toDateString() === selectedCalendarDay.date.toDateString()),
+                   'cursor-pointer hover:scale-[1.02]': day.date
                  }"
-                 [title]="day.status === 'leave' ? 'Leave Approved' : ''">
+                 [title]="day.status === 'leave' ? 'Leave Approved' : ''"
+                 (click)="day.date && selectCalendarDate(day.date)">
 
               <span *ngIf="day.date">{{ day.day }}</span>
 
@@ -140,6 +143,41 @@
             <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-gray-400"></span> Week Off</div>
             <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span> Holiday</div>
             <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500"></span> Leave Approved</div>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="selectedCalendarDay" class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-gray-900">Attendance Details</h2>
+          <span class="px-3 py-1 rounded-full text-xs font-bold uppercase"
+            [ngClass]="{
+              'bg-green-100 text-green-700': selectedCalendarDay.status === 'present',
+              'bg-red-100 text-red-700': selectedCalendarDay.status === 'absent',
+              'bg-yellow-100 text-yellow-700': selectedCalendarDay.status === 'half day' || selectedCalendarDay.status === 'late',
+              'bg-gray-100 text-gray-600': selectedCalendarDay.status === 'weekend',
+              'bg-purple-100 text-purple-700': selectedCalendarDay.status === 'leave'
+            }">
+            {{ selectedCalendarDay.status }}
+          </span>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">{{ selectedCalendarDay.date | date:'fullDate' }}</p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div class="rounded-xl bg-gray-50 p-4">
+            <p class="text-gray-500">Check In</p>
+            <p class="font-bold text-gray-900 mt-1">{{ selectedCalendarDay.checkInText }}</p>
+          </div>
+          <div class="rounded-xl bg-gray-50 p-4">
+            <p class="text-gray-500">Check Out</p>
+            <p class="font-bold text-gray-900 mt-1">{{ selectedCalendarDay.checkOutText }}</p>
+          </div>
+          <div class="rounded-xl bg-gray-50 p-4">
+            <p class="text-gray-500">Work Hours</p>
+            <p class="font-bold text-gray-900 mt-1">{{ selectedCalendarDay.workHoursText }}</p>
+          </div>
+          <div class="rounded-xl bg-gray-50 p-4">
+            <p class="text-gray-500">Location</p>
+            <p class="font-bold text-gray-900 mt-1">{{ selectedCalendarDay.locationText }}</p>
           </div>
         </div>
       </div>
@@ -211,7 +249,7 @@
       </div>
 
       <!-- Team Summary -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div *ngIf="canViewTeamSummary" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="p-6 border-b border-gray-100 flex justify-between items-center">
           <h2 class="text-lg font-bold text-gray-900">Team Summary</h2>
         </div>

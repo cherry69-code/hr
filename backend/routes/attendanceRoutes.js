@@ -12,7 +12,7 @@ router.post('/correction', authorize('admin', 'hr'), requestCorrection);
 router.get('/correction', authorize('admin', 'hr'), getCorrectionRequests);
 router.put('/correction/:id', authorize('admin'), updateCorrectionStatus);
 
-router.get('/summary/team', getTeamSummary);
+router.get('/summary/team', authorize('admin', 'hr', 'manager'), getTeamSummary);
 router.post('/checkin/:employeeId', checkIn);
 router.put('/checkout/:employeeId', checkOut);
 router.get('/:employeeId', getAttendance);

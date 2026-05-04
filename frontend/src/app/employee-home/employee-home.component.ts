@@ -79,6 +79,11 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   private leaderboardTimer: any = null;
 
   weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  selectedCalendarDay: any = null;
+
+  get canViewTeamSummary(): boolean {
+    return ['admin', 'hr', 'manager'].includes(String(this.user?.role || '').toLowerCase());
+  }
 
   get currentMonthName(): string {
     return this.currentDate.toLocaleString('default', { month: 'long' });
@@ -120,7 +125,11 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.generateCalendar();
       this.loadAttendance();
-      this.loadTeamSummary();
+      if (this.canViewTeamSummary) {
+        this.loadTeamSummary();
+      } else {
+        this.teamAttendance = [];
+      }
       this.loadLeaves();
       this.loadLeaderboard();
 
@@ -365,9 +374,11 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
       this.daysInMonth.push({
         date: date,
         day: i,
-        status: isWeeklyOff ? 'weekend' : 'absent'
+        status: isWeeklyOff ? 'weekend' : 'absent',
+        record: null
       });
     }
+    this.syncSelectedCalendarDay();
   }
 
   loadAttendance() {
@@ -379,6 +390,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
         this.mapAttendanceToCalendar();
         this.calculateTodaySummary();
         this.calculateStats();
+        this.selectCalendarDate(new Date());
       },
       error: (err) => this.toast.error(err.error?.error || 'Failed to load attendance')
     });
@@ -477,6 +489,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
         new Date(r.date).toDateString() === day.date.toDateString()
       );
 
+      day.record = record || null;
       if (record) {
         day.status = record.status.toLowerCase(); // present, absent, late
       }
@@ -488,6 +501,52 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
       // Keep existing status (weekend/absent) if no record found
       return day;
     });
+    this.syncSelectedCalendarDay();
+  }
+
+  selectCalendarDate(date: Date | null) {
+    if (!date) return;
+    const selected = this.daysInMonth.find(day => day?.date && new Date(day.date).toDateString() === new Date(date).toDateString());
+    if (!selected) return;
+    const status = selected.status || 'absent';
+    const record = selected.record || null;
+    const details: any = {
+      date: selected.date,
+      status,
+      checkInText: '--:--',
+      checkOutText: '--:--',
+      workHoursText: '--:--',
+      locationText: status === 'absent' ? 'No attendance record' : '-'
+    };
+
+    if (status === 'weekend') {
+      details.locationText = 'Weekly Off';
+    } else if (status === 'leave') {
+      details.locationText = 'Approved leave';
+    }
+
+    if (record) {
+      details.status = String(record.status || status).toLowerCase();
+      details.checkInText = record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+      details.checkOutText = record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+      if (record.checkInTime && record.checkOutTime) {
+        const diff = new Date(record.checkOutTime).getTime() - new Date(record.checkInTime).getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        details.workHoursText = `${hours}h ${minutes}m`;
+      } else if (record.checkInTime) {
+        details.workHoursText = 'In Progress';
+      }
+      details.locationText = record.locationName || (record.locationValidated ? 'Verified Location' : 'Unverified');
+    }
+
+    this.selectedCalendarDay = details;
+  }
+
+  private syncSelectedCalendarDay() {
+    if (this.selectedCalendarDay?.date) {
+      this.selectCalendarDate(this.selectedCalendarDay.date);
+    }
   }
 
   isCheckedIn = false;
@@ -652,6 +711,8 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
     this.generateCalendar();
     this.mapAttendanceToCalendar();
     this.calculateStats();
+    const firstRealDay = this.daysInMonth.find(day => !!day.date);
+    this.selectCalendarDate(firstRealDay?.date || null);
   }
 
   nextMonth() {
@@ -660,6 +721,8 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
     this.generateCalendar();
     this.mapAttendanceToCalendar();
     this.calculateStats();
+    const firstRealDay = this.daysInMonth.find(day => !!day.date);
+    this.selectCalendarDate(firstRealDay?.date || null);
   }
 
   logout() {

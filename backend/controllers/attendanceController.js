@@ -4,13 +4,14 @@ const Location = require('../models/Location');
 const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts } = require('../utils/businessTime');
 
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
 
 const isGeoAttendanceAllowedDay = (date) => {
-  const day = new Date(date).getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  const day = getBusinessParts(date).dayOfWeek; // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   return day !== 1; // Tuesday to Sunday
 };
 
@@ -56,27 +57,17 @@ const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationI
   return { best, matched };
 };
 
-const getCheckInCutoff = (date) => {
-  const d = new Date(date);
-  d.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
-  return d;
-};
-
-const getCheckOutCutoff = (date) => {
-  const d = new Date(date);
-  d.setHours(CHECK_OUT_CUTOFF_HOUR, CHECK_OUT_CUTOFF_MINUTE, 0, 0);
-  return d;
-};
-
 const getAttendanceStatus = ({ checkInTime, checkOutTime }) => {
-  const inCutoff = getCheckInCutoff(checkInTime);
-  const outCutoff = getCheckOutCutoff(checkInTime);
-  const lateFlag = new Date(checkInTime).getTime() > inCutoff.getTime();
-  const lateMinutes = lateFlag ? Math.floor((new Date(checkInTime).getTime() - inCutoff.getTime()) / (1000 * 60)) : 0;
+  const inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
+  const outCutoffMinutes = CHECK_OUT_CUTOFF_HOUR * 60 + CHECK_OUT_CUTOFF_MINUTE;
+  const checkInMinutes = getBusinessMinutes(checkInTime);
+  const checkOutMinutes = checkOutTime ? getBusinessMinutes(checkOutTime) : null;
+  const lateFlag = checkInMinutes > inCutoffMinutes;
+  const lateMinutes = lateFlag ? checkInMinutes - inCutoffMinutes : 0;
   const earlyExitMinutes = checkOutTime
-    ? Math.max(0, Math.floor((outCutoff.getTime() - new Date(checkOutTime).getTime()) / (1000 * 60)))
+    ? Math.max(0, outCutoffMinutes - Number(checkOutMinutes || 0))
     : 0;
-  const status = !lateFlag && checkOutTime && new Date(checkOutTime).getTime() >= outCutoff.getTime() ? 'Present' : 'Half Day';
+  const status = !lateFlag && checkOutTime && Number(checkOutMinutes || 0) >= outCutoffMinutes ? 'Present' : 'Half Day';
   return { status, lateFlag, lateMinutes, earlyExitMinutes };
 };
 
@@ -130,11 +121,10 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   }
 
   // Check if already checked in today (One Punch-In Policy)
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
+  const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(now);
   const existingAttendance = await Attendance.findOne({
     employeeId,
-    date: { $gte: startOfDay }
+    date: { $gte: startOfDay, $lte: endOfDay }
   });
 
   if (existingAttendance) {
@@ -209,8 +199,8 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   const lat = Number(latitude);
   const lng = Number(longitude);
   const acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const { start: today, end: endOfDay } = getBusinessDayBounds(now);
 
   if (!isGeoAttendanceAllowedDay(today)) {
     return res.status(400).json({ success: false, error: 'Geo attendance is allowed only from Tuesday to Sunday' });
@@ -227,7 +217,7 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   // Find attendance for today (even if already checked out)
   const attendance = await Attendance.findOne({
     employeeId,
-    date: { $gte: today }
+    date: { $gte: today, $lte: endOfDay }
   });
 
   if (!attendance) {
@@ -281,42 +271,30 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
 // @route   GET /api/attendance/summary/team
 // @access  Private
 exports.getTeamSummary = asyncHandler(async (req, res, next) => {
-  const today = new Date();
-  const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-  const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+  const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(new Date());
+  const role = String(req.user?.role || '').toLowerCase();
+  const level = String(req.user?.level || '');
+  const isAdmin = role === 'admin';
+  const isHr = role === 'hr';
+  const isManager = role === 'manager';
 
-  const isAdmin = req.user.role === 'admin';
-  const isHr = req.user.role === 'hr';
-  const isManagerLevel = req.user.role === 'manager' || ['N1', 'N2', 'N3', 'PnL'].includes(String(req.user.level || ''));
-
-  const getHierarchyIds = async (rootId) => {
-    const rows = await User.aggregate([
-      { $match: { _id: rootId } },
-      {
-        $graphLookup: {
-          from: 'users',
-          startWith: '$_id',
-          connectFromField: '_id',
-          connectToField: 'reportingManagerId',
-          as: 'desc'
-        }
-      },
-      { $project: { ids: { $concatArrays: [['$_id'], '$desc._id'] } } }
-    ]);
-    return rows[0]?.ids || [rootId];
+  let query = {
+    role: { $nin: ['admin', 'hr'] },
+    _id: { $ne: req.user._id }
   };
 
-  let query = { role: { $ne: 'admin' } };
-
-  if (!isAdmin && !isHr) {
-    if (isManagerLevel) {
-      const ids = await getHierarchyIds(req.user._id);
-      query._id = { $in: ids };
-    } else if (req.user.teamId) {
-      query.teamId = req.user.teamId;
+  if (isManager) {
+    if (level === 'PnL') {
+      if (req.user.teamId) {
+        query.teamId = req.user.teamId;
+      } else {
+        query.reportingManagerId = req.user._id;
+      }
     } else {
-      query._id = req.user._id;
+      query.reportingManagerId = req.user._id;
     }
+  } else if (!isAdmin && !isHr) {
+    return res.status(403).json({ success: false, error: 'Not authorized to view team summary' });
   }
 
   // Get employees (scoped)
@@ -368,6 +346,13 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
 // @route   GET /api/attendance/:employeeId
 // @access  Private
 exports.getAttendance = asyncHandler(async (req, res, next) => {
+  const requestedEmployeeId = String(req.params.employeeId || '');
+  const requesterId = String(req.user?._id || '');
+  const role = String(req.user?.role || '').toLowerCase();
+  const canView = requestedEmployeeId === requesterId || role === 'admin' || role === 'hr';
+  if (!canView) {
+    return res.status(403).json({ success: false, error: 'Not authorized to view this attendance' });
+  }
   const attendance = await Attendance.find({ employeeId: req.params.employeeId }).sort('-date').lean();
   res.status(200).json({ success: true, count: attendance.length, data: attendance });
 });

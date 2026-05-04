@@ -1,23 +1,7 @@
 const Attendance = require('../models/Attendance');
 const Shift = require('../models/Shift');
 const Leave = require('../models/Leave');
-
-const parseHm = (hm) => {
-  const m = String(hm || '').trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return { hh, mm };
-};
-
-const buildTimeOnDate = (date, hm) => {
-  const p = parseHm(hm);
-  if (!p) return null;
-  const d = new Date(date);
-  d.setHours(p.hh, p.mm, 0, 0);
-  return d;
-};
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, parseHmToMinutes } = require('../utils/businessTime');
 
 const minutesDiff = (a, b) => Math.floor((a.getTime() - b.getTime()) / (1000 * 60));
 
@@ -42,12 +26,9 @@ exports.upsertAttendanceFromPunches = async ({ employee, deviceId, day, punches,
   if (!employee?._id) throw new Error('Employee missing');
   if (!Array.isArray(punches) || !punches.length) return null;
 
-  const startOfDay = new Date(day);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(day);
-  endOfDay.setHours(23, 59, 59, 999);
+  const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(day);
 
-  const isWeeklyOff = startOfDay.getDay() === 1;
+  const isWeeklyOff = getBusinessParts(day).dayOfWeek === 1;
   const approvedLeave = await Leave.findOne({
     employeeId: employee._id,
     status: 'approved',
@@ -68,12 +49,14 @@ exports.upsertAttendanceFromPunches = async ({ employee, deviceId, day, punches,
   const missedPunch = sorted.length === 1;
 
   const shift = await getShiftForEmployee(employee);
-  const shiftStart = buildTimeOnDate(startOfDay, shift.shiftStart || '10:00');
-  const shiftEnd = buildTimeOnDate(startOfDay, shift.shiftEnd || '18:30');
+  const shiftStartMinutes = parseHmToMinutes(shift.shiftStart || '10:00', 10 * 60);
+  const shiftEndMinutes = parseHmToMinutes(shift.shiftEnd || '18:30', 18 * 60 + 30);
 
   const workingMinutes = checkOutTime ? Math.max(0, minutesDiff(checkOutTime, checkInTime)) : 0;
-  const lateMinutesRaw = shiftStart ? Math.max(0, minutesDiff(checkInTime, shiftStart)) : 0;
-  const earlyExitMinutes = shiftEnd && checkOutTime ? Math.max(0, minutesDiff(shiftEnd, checkOutTime)) : 0;
+  const checkInMinutes = getBusinessMinutes(checkInTime);
+  const checkOutMinutes = checkOutTime ? getBusinessMinutes(checkOutTime) : null;
+  const lateMinutesRaw = Math.max(0, checkInMinutes - shiftStartMinutes);
+  const earlyExitMinutes = checkOutMinutes !== null ? Math.max(0, shiftEndMinutes - checkOutMinutes) : 0;
 
   const lateFlag = lateMinutesRaw > 0;
 
@@ -85,7 +68,7 @@ exports.upsertAttendanceFromPunches = async ({ employee, deviceId, day, punches,
   } else if (missedPunch) {
     status = 'Missed Punch';
   } else {
-    status = !lateFlag && checkOutTime && shiftEnd && checkOutTime.getTime() >= shiftEnd.getTime() ? 'Present' : 'Half Day';
+    status = !lateFlag && checkOutMinutes !== null && checkOutMinutes >= shiftEndMinutes ? 'Present' : 'Half Day';
   }
 
   const existing = await Attendance.findOne({

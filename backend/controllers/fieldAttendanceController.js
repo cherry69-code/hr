@@ -2,26 +2,23 @@ const Attendance = require('../models/Attendance');
 const FieldAttendanceLog = require('../models/FieldAttendanceLog');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts } = require('../utils/businessTime');
 
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
 
 const isWeekend = (d) => {
-  const day = d.getDay();
+  const day = getBusinessParts(d).dayOfWeek;
   return day === 0 || day === 6;
 };
 
 const getStartOfDay = (d) => {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  return getBusinessDayBounds(d).start;
 };
 
 const getEndOfDay = (d) => {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+  return getBusinessDayBounds(d).end;
 };
 
 const toNumber = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -78,9 +75,7 @@ const validateGps = ({ latitude, longitude, gpsAccuracyMeters }) => {
 };
 
 const computeStatus = (checkInTime) => {
-  const threshold = new Date(checkInTime);
-  threshold.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
-  return new Date(checkInTime).getTime() > threshold.getTime() ? 'Half Day' : 'Present';
+  return getBusinessMinutes(checkInTime) > CHECK_IN_CUTOFF_HOUR * 60 ? 'Half Day' : 'Present';
 };
 
 exports.fieldCheckIn = asyncHandler(async (req, res) => {
@@ -208,15 +203,15 @@ exports.fieldCheckOut = asyncHandler(async (req, res) => {
 
   attendance.locationName = locationAddress || attendance.locationName || 'Field';
   attendance.source = 'FIELD_FACE_GPS';
-  const lateThreshold = new Date(checkInTime);
-  lateThreshold.setHours(CHECK_IN_CUTOFF_HOUR, 0, 0, 0);
-  const outThreshold = new Date(checkInTime);
-  outThreshold.setHours(CHECK_OUT_CUTOFF_HOUR, CHECK_OUT_CUTOFF_MINUTE, 0, 0);
-  attendance.lateFlag = checkInTime.getTime() > lateThreshold.getTime();
-  attendance.lateMinutes = attendance.lateFlag ? Math.floor((checkInTime.getTime() - lateThreshold.getTime()) / (1000 * 60)) : 0;
-  attendance.earlyExitMinutes = Math.max(0, Math.floor((outThreshold.getTime() - now.getTime()) / (1000 * 60)));
+  const checkInMinutes = getBusinessMinutes(checkInTime);
+  const checkOutMinutes = getBusinessMinutes(now);
+  const inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
+  const outCutoffMinutes = CHECK_OUT_CUTOFF_HOUR * 60 + CHECK_OUT_CUTOFF_MINUTE;
+  attendance.lateFlag = checkInMinutes > inCutoffMinutes;
+  attendance.lateMinutes = attendance.lateFlag ? checkInMinutes - inCutoffMinutes : 0;
+  attendance.earlyExitMinutes = Math.max(0, outCutoffMinutes - checkOutMinutes);
   attendance.workingMinutes = Math.max(0, Math.floor(durationMs / (1000 * 60)));
-  attendance.status = !attendance.lateFlag && now.getTime() >= outThreshold.getTime() ? 'Present' : 'Half Day';
+  attendance.status = !attendance.lateFlag && checkOutMinutes >= outCutoffMinutes ? 'Present' : 'Half Day';
   await attendance.save();
 
   await FieldAttendanceLog.create({

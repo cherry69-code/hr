@@ -30,6 +30,11 @@ export class ProfileComponent implements OnInit {
   currentUploadDocType = '';
   uploadingProfileImage = false;
   documentsIndex: any = {};
+  attendanceRecords: any[] = [];
+  attendanceDays: any[] = [];
+  attendanceCurrentDate = new Date();
+  attendanceWeekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  selectedAttendanceDay: any = null;
 
   // New fields for HR update
   editForm: any = {
@@ -64,6 +69,7 @@ export class ProfileComponent implements OnInit {
         this.loading = false;
         this.loadLeaderboardStats();
         this.loadDocuments();
+        this.loadAttendance();
       },
       error: () => this.loading = false
     });
@@ -84,6 +90,117 @@ export class ProfileComponent implements OnInit {
         this.documentsIndex = {};
       }
     });
+  }
+
+  get attendanceMonthName(): string {
+    return this.attendanceCurrentDate.toLocaleString('default', { month: 'long' });
+  }
+
+  loadAttendance() {
+    if (!this.user?._id) return;
+    this.http.get(`${environment.apiUrl}/attendance/${this.user._id}`).subscribe({
+      next: (res: any) => {
+        this.attendanceRecords = res.data || [];
+        this.generateAttendanceCalendar();
+        this.mapAttendanceToCalendar();
+        const today = new Date();
+        const inMonth = today.getFullYear() === this.attendanceCurrentDate.getFullYear() && today.getMonth() === this.attendanceCurrentDate.getMonth();
+        const target = inMonth ? today : this.attendanceDays.find(day => !!day.date)?.date;
+        this.selectAttendanceDate(target || null);
+      },
+      error: () => {
+        this.attendanceRecords = [];
+        this.generateAttendanceCalendar();
+        this.selectAttendanceDate(this.attendanceDays.find(day => !!day.date)?.date || null);
+      }
+    });
+  }
+
+  generateAttendanceCalendar() {
+    this.attendanceDays = [];
+    const year = this.attendanceCurrentDate.getFullYear();
+    const month = this.attendanceCurrentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    for (let i = 0; i < firstDay.getDay(); i++) {
+      this.attendanceDays.push({ date: null });
+    }
+
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      const date = new Date(year, month, i);
+      const isWeeklyOff = date.getDay() === 1;
+      this.attendanceDays.push({
+        date,
+        day: i,
+        status: isWeeklyOff ? 'weekend' : 'absent',
+        record: null
+      });
+    }
+    this.syncSelectedAttendanceDay();
+  }
+
+  mapAttendanceToCalendar() {
+    this.attendanceDays = this.attendanceDays.map(day => {
+      if (!day.date) return day;
+      const record = this.attendanceRecords.find((r: any) => new Date(r.date).toDateString() === day.date.toDateString());
+      day.record = record || null;
+      if (record?.status) {
+        day.status = String(record.status).toLowerCase();
+      }
+      return day;
+    });
+    this.syncSelectedAttendanceDay();
+  }
+
+  selectAttendanceDate(date: Date | null) {
+    if (!date) return;
+    const selected = this.attendanceDays.find(day => day?.date && new Date(day.date).toDateString() === new Date(date).toDateString());
+    if (!selected) return;
+    const record = selected.record || null;
+    const details: any = {
+      date: selected.date,
+      status: selected.status || 'absent',
+      checkInText: '--:--',
+      checkOutText: '--:--',
+      workHoursText: '--:--',
+      locationText: selected.status === 'weekend' ? 'Weekly Off' : 'No attendance record'
+    };
+    if (record) {
+      details.status = String(record.status || selected.status).toLowerCase();
+      details.checkInText = record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+      details.checkOutText = record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+      if (record.checkInTime && record.checkOutTime) {
+        const diff = new Date(record.checkOutTime).getTime() - new Date(record.checkInTime).getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        details.workHoursText = `${hours}h ${minutes}m`;
+      } else if (record.checkInTime) {
+        details.workHoursText = 'In Progress';
+      }
+      details.locationText = record.locationName || (record.locationValidated ? 'Verified Location' : 'Unverified');
+    }
+    this.selectedAttendanceDay = details;
+  }
+
+  private syncSelectedAttendanceDay() {
+    if (this.selectedAttendanceDay?.date) {
+      this.selectAttendanceDate(this.selectedAttendanceDay.date);
+    }
+  }
+
+  prevAttendanceMonth() {
+    this.attendanceCurrentDate = new Date(this.attendanceCurrentDate.getFullYear(), this.attendanceCurrentDate.getMonth() - 1, 1);
+    this.generateAttendanceCalendar();
+    this.mapAttendanceToCalendar();
+    this.selectAttendanceDate(this.attendanceDays.find(day => !!day.date)?.date || null);
+  }
+
+  nextAttendanceMonth() {
+    this.attendanceCurrentDate = new Date(this.attendanceCurrentDate.getFullYear(), this.attendanceCurrentDate.getMonth() + 1, 1);
+    this.generateAttendanceCalendar();
+    this.mapAttendanceToCalendar();
+    this.selectAttendanceDate(this.attendanceDays.find(day => !!day.date)?.date || null);
   }
 
   openDocumentByType(type: string) {
