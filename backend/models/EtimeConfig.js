@@ -4,10 +4,11 @@ const EtimeConfigSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, trim: true },
     enabled: { type: Boolean, default: false },
-    driver: { type: String, enum: ['mssql', 'mysql'], default: 'mssql' },
+    driver: { type: String, enum: ['mssql', 'mysql', 'access'], default: 'mssql' },
     host: { type: String, trim: true },
     port: { type: Number },
     dbName: { type: String, trim: true },
+    dbPath: { type: String, trim: true },
     dbUser: { type: String, trim: true },
     dbPasswordEnc: { type: String, trim: true },
     startFrom: { type: Date },

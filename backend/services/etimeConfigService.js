@@ -21,6 +21,7 @@ const normalizeTimezone = (v) => {
 
 const normalizeDriver = (v) => {
   const d = String(v || '').toLowerCase();
+  if (d === 'access') return 'access';
   if (d === 'mysql') return 'mysql';
   return 'mssql';
 };
@@ -36,6 +37,7 @@ exports.getEtimeConfig = async () => {
     host: String(doc.host || '').trim(),
     port: safeNumber(doc.port),
     database: String(doc.dbName || '').trim(),
+    filePath: String(doc.dbPath || '').trim(),
     user: String(doc.dbUser || '').trim(),
     password,
     startFrom: doc.startFrom ? new Date(doc.startFrom) : null,
@@ -53,6 +55,7 @@ exports.upsertEtimeConfig = async (input) => {
   const host = input.host !== undefined ? String(input.host || '').trim() : undefined;
   const port = input.port !== undefined ? safeNumber(input.port) : undefined;
   const dbName = input.dbName !== undefined ? String(input.dbName || '').trim() : undefined;
+  const dbPath = input.dbPath !== undefined ? String(input.dbPath || '').trim() : undefined;
   const dbUser = input.dbUser !== undefined ? String(input.dbUser || '').trim() : undefined;
   const intervalMs = input.intervalMs !== undefined ? safeNumber(input.intervalMs) : undefined;
   const timezone = input.timezone !== undefined ? normalizeTimezone(input.timezone) : undefined;
@@ -75,6 +78,7 @@ exports.upsertEtimeConfig = async (input) => {
   if (host !== undefined) update.host = host;
   if (port !== undefined) update.port = port;
   if (dbName !== undefined) update.dbName = dbName;
+  if (dbPath !== undefined) update.dbPath = dbPath;
   if (dbUser !== undefined) update.dbUser = dbUser;
   if (intervalMs !== undefined) update.intervalMs = intervalMs;
   if (timezone !== undefined) update.timezone = timezone;
@@ -99,6 +103,7 @@ exports.getPublicEtimeConfig = async () => {
     host: cfg.host,
     port: cfg.port,
     database: cfg.database,
+    filePath: cfg.filePath,
     user: cfg.user,
     startFrom: cfg.startFrom ? cfg.startFrom.toISOString() : null,
     intervalMs: cfg.intervalMs,

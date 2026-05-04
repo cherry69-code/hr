@@ -36,8 +36,10 @@ export class BiometricAdminComponent implements OnInit {
 
   configForm = {
     enabled: false,
+    driver: 'mssql',
     host: '',
     dbName: '',
+    dbPath: '',
     dbUser: '',
     dbPassword: '',
     startFrom: '',
@@ -60,6 +62,10 @@ export class BiometricAdminComponent implements OnInit {
 
   ngOnInit() {
     this.refreshAll();
+  }
+
+  get isAccessDriver(): boolean {
+    return String(this.configForm.driver || '').toLowerCase() === 'access';
   }
 
   refreshAll() {
@@ -93,9 +99,11 @@ export class BiometricAdminComponent implements OnInit {
         this.config = res.data || null;
         this.configForm = {
           enabled: Boolean(this.config?.enabled),
+          driver: this.config?.driver || 'mssql',
           host: this.config?.host || '',
           dbName: this.config?.database || '',
-          dbUser: this.config?.user || '',
+          dbPath: this.config?.filePath || '',
+          dbUser: this.config?.user || 'Admin',
           dbPassword: '',
           startFrom: this.config?.startFrom ? new Date(this.config.startFrom).toISOString().slice(0, 16) : '',
           intervalMinutes: Math.max(1, Math.round(Number(this.config?.intervalMs || 300000) / 60000)),
@@ -179,14 +187,16 @@ export class BiometricAdminComponent implements OnInit {
     this.savingConfig = true;
     const payload: any = {
       enabled: this.configForm.enabled,
+      driver: this.configForm.driver,
       host: this.configForm.host.trim(),
       dbName: this.configForm.dbName.trim(),
-      dbUser: this.configForm.dbUser.trim(),
+      dbPath: this.configForm.dbPath.trim(),
+      dbUser: this.configForm.dbUser.trim() || (this.isAccessDriver ? 'Admin' : ''),
       startFrom: this.configForm.startFrom ? new Date(this.configForm.startFrom).toISOString() : '',
       intervalMs: Math.max(1, Number(this.configForm.intervalMinutes || 5)) * 60000,
       timezone: (this.configForm.timezone || 'Asia/Kolkata').trim()
     };
-    if (this.configForm.dbPassword.trim()) {
+    if (this.configForm.dbPassword || this.isAccessDriver) {
       payload.dbPassword = this.configForm.dbPassword;
     }
 
@@ -210,10 +220,12 @@ export class BiometricAdminComponent implements OnInit {
   testConfig() {
     this.testingConfig = true;
     this.http.post(`${environment.apiUrl}/biometric/etime-config/test`, {
+      driver: this.configForm.driver,
       host: this.configForm.host.trim(),
       dbName: this.configForm.dbName.trim(),
-      dbUser: this.configForm.dbUser.trim(),
-      dbPassword: this.configForm.dbPassword.trim(),
+      dbPath: this.configForm.dbPath.trim(),
+      dbUser: this.configForm.dbUser.trim() || (this.isAccessDriver ? 'Admin' : ''),
+      dbPassword: this.configForm.dbPassword,
       timezone: (this.configForm.timezone || 'Asia/Kolkata').trim()
     }).subscribe({
       next: (res: any) => {

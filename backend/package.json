@@ -29,6 +29,7 @@
     "mssql": "^11.0.1",
     "mysql2": "^3.14.0",
     "nodemailer": "^8.0.1",
+    "odbc": "^2.5.0",
     "pdfkit": "^0.13.0",
     "prophr": "file:..",
     "xss-clean": "^0.1.4"
