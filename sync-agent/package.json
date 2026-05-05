@@ -1,0 +1,16 @@
+{
+  "name": "prophr-sync-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows sync agent for pushing eTimeTrackLite Access punches to the live HRMS API",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "run-once": "node agent.js --once",
+    "check": "node --check agent.js && node --check lib/accessReader.js && node --check lib/apiClient.js && node --check lib/checkpointStore.js && node --check lib/config.js && node --check lib/logger.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "odbc": "^2.5.0"
+  }
+}

@@ -7,6 +7,7 @@ const {
   deleteMapping,
   getDevices,
   processPunch,
+  processAgentLogs,
   getLogs
 } = require('../controllers/biometricController');
 const { getSyncStatus, getSyncReport, getSyncIssues, retrySyncIssue, runSyncNow, setDeviceToken } = require('../controllers/etimeSyncController');
@@ -36,6 +37,7 @@ const ipWhitelist = (req, res, next) => {
 
 router.post('/punch', ipWhitelist, processPunch);
 router.post('/logs', ipWhitelist, processPunch);
+router.post('/agent/logs', processAgentLogs);
 
 // Admin Management Endpoints
 router.use(protect);

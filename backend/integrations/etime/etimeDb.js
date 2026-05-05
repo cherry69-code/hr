@@ -1,9 +1,18 @@
 const mssql = require('mssql');
 const mysql = require('mysql2/promise');
-const odbc = require('odbc');
 
 let mssqlPool = null;
 let mysqlPool = null;
+let odbcModule = null;
+
+const getOdbc = () => {
+  if (odbcModule) return odbcModule;
+  // Load ODBC only when Access sync is actually used. Linux hosts like Render
+  // don't have the Windows MDB driver/runtime, so startup must not require it.
+  // eslint-disable-next-line global-require
+  odbcModule = require('odbc');
+  return odbcModule;
+};
 
 const getDriver = (override) => String(override?.driver || process.env.ETIME_DB_DRIVER || 'mssql').toLowerCase();
 
@@ -94,6 +103,7 @@ const buildAccessConnectionString = (cfg) => {
 };
 
 const runAccessQuery = async (cfg, sql) => {
+  const odbc = getOdbc();
   const conn = await odbc.connect(buildAccessConnectionString(cfg));
   try {
     const rows = await conn.query(sql);

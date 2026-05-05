@@ -6,6 +6,94 @@ const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 const crypto = require('crypto');
 const { upsertAttendanceFromPunches } = require('../services/attendanceEngine');
+const { getBusinessDayBounds } = require('../utils/businessTime');
+
+const getDeviceTokenFromRequest = (req) =>
+  String(req.headers['x-biometric-token'] || '').trim() ||
+  String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+const validateDeviceToken = async (deviceId, token) => {
+  const normalizedDeviceId = String(deviceId || 'UNKNOWN').trim() || 'UNKNOWN';
+  const device = await BiometricDevice.findOne({ deviceId: normalizedDeviceId }).lean();
+  if (!device) {
+    const err = new Error('Invalid device_id');
+    err.statusCode = 403;
+    throw err;
+  }
+  if (device.apiTokenHash) {
+    if (!token) {
+      const err = new Error('Missing device token');
+      err.statusCode = 403;
+      throw err;
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    if (tokenHash !== device.apiTokenHash) {
+      const err = new Error('Invalid device token');
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+  return device;
+};
+
+const normalizePunchType = (value) => {
+  const punchType = String(value || 'IN').trim().toUpperCase();
+  if (['IN', 'OUT', 'BREAK_IN', 'BREAK_OUT', 'CHECK_IN', 'CHECK_OUT'].includes(punchType)) return punchType;
+  return 'IN';
+};
+
+const normalizeVerificationType = (value) => {
+  const verificationType = String(value || 'unknown').trim().toLowerCase();
+  if (['face', 'fingerprint', 'rfid', 'password', 'unknown'].includes(verificationType)) return verificationType;
+  return 'unknown';
+};
+
+const getDayKey = (date) => {
+  const dt = new Date(date);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toISOString().slice(0, 10);
+};
+
+const getEmployeeForCode = async (employeeCode) => {
+  const direct = await User.findOne({ employeeId: employeeCode }).lean();
+  if (direct) return direct;
+
+  const mapping = await BiometricEmployeeMapping.findOne({ etimeUserId: employeeCode, active: true })
+    .populate('employeeId')
+    .lean();
+  return mapping?.employeeId || null;
+};
+
+const rebuildAttendanceForEmployeeDay = async (employeeCode, day, fallbackDeviceId) => {
+  const employee = await getEmployeeForCode(employeeCode);
+  if (!employee) {
+    return { employeeFound: false, attendance: null };
+  }
+
+  const { start, end } = getBusinessDayBounds(day);
+  const dayLogs = await BiometricLog.find({
+    employeeCode,
+    punchTime: { $gte: start, $lte: end }
+  })
+    .select('punchTime deviceId')
+    .sort({ punchTime: 1 })
+    .lean();
+
+  if (!dayLogs.length) {
+    return { employeeFound: true, attendance: null };
+  }
+
+  const punches = dayLogs.map((log) => log.punchTime);
+  const deviceId = String(dayLogs[dayLogs.length - 1]?.deviceId || fallbackDeviceId || 'UNKNOWN').trim() || 'UNKNOWN';
+  const attendance = await upsertAttendanceFromPunches({
+    employee,
+    deviceId,
+    day: start,
+    punches,
+    source: 'BIOMETRIC'
+  });
+  return { employeeFound: true, attendance };
+};
 
 // @desc    Register/Add a new Biometric Device
 // @route   POST /api/biometric/devices
@@ -53,21 +141,8 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
 
   const employeeCode = String(employee_code || '').trim();
   const deviceId = String(device_id || 'UNKNOWN').trim() || 'UNKNOWN';
-
-  const token =
-    String(req.headers['x-biometric-token'] || '').trim() ||
-    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const device = await BiometricDevice.findOne({ deviceId }).lean();
-  if (!device) {
-    return res.status(403).json({ success: false, error: 'Invalid device_id' });
-  }
-  if (device.apiTokenHash) {
-    if (!token) return res.status(403).json({ success: false, error: 'Missing device token' });
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    if (tokenHash !== device.apiTokenHash) {
-      return res.status(403).json({ success: false, error: 'Invalid device token' });
-    }
-  }
+  const token = getDeviceTokenFromRequest(req);
+  await validateDeviceToken(deviceId, token);
 
   // 1. Upload Photo if provided (Anti-Proxy)
   let imageUrl = '';
@@ -98,8 +173,8 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
         employeeCode,
         deviceId,
         punchTime,
-        punchType: String(punch_type || 'IN').toUpperCase(),
-        verificationType: String(verification_type || 'unknown').toLowerCase(),
+        punchType: normalizePunchType(punch_type),
+        verificationType: normalizeVerificationType(verification_type),
         source: String(source || 'BIOMETRIC').toLowerCase() === 'etime' ? 'etime' : 'BIOMETRIC',
         imageUrl,
         rawPayload: req.body,
@@ -123,10 +198,7 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
   }
 
   const punchDate = new Date(punchTime);
-  const startOfDay = new Date(punchDate);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(punchDate);
-  endOfDay.setHours(23, 59, 59, 999);
+  const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(punchDate);
 
   const dayLogs = await BiometricLog.find({
     employeeCode,
@@ -150,6 +222,108 @@ exports.processPunch = asyncHandler(async (req, res, next) => {
   await BiometricDevice.findOneAndUpdate({ deviceId }, { lastSyncAt: Date.now() });
 
   res.status(200).json({ success: true, message: 'Punch processed successfully', attendance });
+});
+
+// @desc    Process Biometric Agent Logs (batch push API)
+// @route   POST /api/biometric/agent/logs
+// @access  Public (Secured by Device Token)
+exports.processAgentLogs = asyncHandler(async (req, res) => {
+  const deviceId = String(req.body?.device_id || req.body?.deviceId || 'UNKNOWN').trim() || 'UNKNOWN';
+  const token = getDeviceTokenFromRequest(req);
+  await validateDeviceToken(deviceId, token);
+
+  const rawLogs = Array.isArray(req.body?.logs) ? req.body.logs : [];
+  if (!rawLogs.length) {
+    return res.status(400).json({ success: false, error: 'logs array is required' });
+  }
+
+  const ingestLimit = 5000;
+  const logs = rawLogs.slice(0, ingestLimit);
+  const touchedDays = new Map();
+  let accepted = 0;
+  let duplicates = 0;
+  let invalid = 0;
+  let processed = 0;
+
+  for (const row of logs) {
+    const employeeCode = String(row?.employee_code || row?.employeeCode || '').trim();
+    const punchTimeRaw = row?.punch_time || row?.punchTime || row?.timestamp || row?.logDate;
+    const punchTime = new Date(punchTimeRaw);
+
+    if (!employeeCode || Number.isNaN(punchTime.getTime())) {
+      invalid += 1;
+      continue;
+    }
+
+    const uniqueKey = `${employeeCode}|${punchTime.toISOString()}`;
+    const normalizedDeviceId = String(row?.device_id || row?.deviceId || deviceId).trim() || deviceId;
+    const result = await BiometricLog.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          uniqueKey,
+          employeeCode,
+          deviceId: normalizedDeviceId,
+          punchTime,
+          punchType: normalizePunchType(row?.punch_type || row?.punchType),
+          verificationType: normalizeVerificationType(row?.verification_type || row?.verificationType),
+          source: 'etime',
+          rawPayload: row,
+          processed: false,
+          receivedAt: Date.now()
+        }
+      },
+      { upsert: true }
+    );
+
+    if (Number(result?.upsertedCount || 0) > 0) {
+      accepted += 1;
+      const dayKey = `${employeeCode}|${getDayKey(punchTime)}`;
+      if (dayKey) {
+        touchedDays.set(dayKey, { employeeCode, day: punchTime, deviceId: normalizedDeviceId });
+      }
+    } else {
+      duplicates += 1;
+    }
+  }
+
+  const attendanceResults = [];
+  for (const { employeeCode, day, deviceId: dayDeviceId } of touchedDays.values()) {
+    const result = await rebuildAttendanceForEmployeeDay(employeeCode, day, dayDeviceId);
+    if (result.employeeFound && result.attendance) {
+      processed += 1;
+      attendanceResults.push({
+        employeeCode,
+        date: result.attendance.date,
+        status: result.attendance.status
+      });
+    }
+
+    const { start, end } = getBusinessDayBounds(day);
+    await BiometricLog.updateMany(
+      {
+        employeeCode,
+        punchTime: { $gte: start, $lte: end },
+        processed: false
+      },
+      { $set: { processed: true, processedAt: Date.now() } }
+    ).catch(() => {});
+  }
+
+  await BiometricDevice.updateOne({ deviceId }, { $set: { lastSyncAt: new Date() } }).catch(() => {});
+
+  res.status(200).json({
+    success: true,
+    data: {
+      deviceId,
+      received: logs.length,
+      accepted,
+      duplicates,
+      invalid,
+      processedDays: processed,
+      attendanceResults
+    }
+  });
 });
 
 // @desc    Get Biometric Logs

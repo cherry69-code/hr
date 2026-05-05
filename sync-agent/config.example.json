@@ -1,0 +1,17 @@
+{
+  "apiBaseUrl": "https://api.hrpropninja.com",
+  "deviceId": "OFFICE-ESSL-01",
+  "deviceToken": "paste-generated-device-token-here",
+  "databasePath": "G:\\Essl\\eTimeTrackLite1.mdb",
+  "dbUser": "Admin",
+  "dbPassword": "",
+  "timezone": "Asia/Kolkata",
+  "scheduleTimes": ["11:00", "15:00", "17:00", "20:00"],
+  "pollIntervalMs": 30000,
+  "batchSize": 500,
+  "requestTimeoutMs": 30000,
+  "lookbackHours": 72,
+  "runOnStartup": true,
+  "stateFile": "./data/state.json",
+  "logDir": "./logs"
+}
