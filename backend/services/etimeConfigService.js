@@ -26,6 +26,36 @@ const normalizeDriver = (v) => {
   return 'mssql';
 };
 
+const DEFAULT_SCHEDULE_TIMES = ['11:00', '15:00', '17:00', '20:00'];
+
+const normalizeScheduleTimes = (value) => {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+  const seen = new Set();
+  const cleaned = [];
+  for (const item of raw) {
+    const match = String(item || '').match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) continue;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      continue;
+    }
+    const hhmm = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    if (seen.has(hhmm)) continue;
+    seen.add(hhmm);
+    cleaned.push(hhmm);
+  }
+
+  if (!cleaned.length) return [...DEFAULT_SCHEDULE_TIMES];
+  return cleaned.sort();
+};
+
 exports.getEtimeConfig = async () => {
   const doc = await EtimeConfig.findOne({ key: CONFIG_KEY }).lean();
   if (!doc) return null;
@@ -42,6 +72,7 @@ exports.getEtimeConfig = async () => {
     password,
     startFrom: doc.startFrom ? new Date(doc.startFrom) : null,
     intervalMs: safeNumber(doc.intervalMs) || 300000,
+    scheduleTimes: normalizeScheduleTimes(doc.scheduleTimes),
     timezone: normalizeTimezone(doc.timezone),
     updatedAt: doc.updatedAt || null
   };
@@ -58,6 +89,7 @@ exports.upsertEtimeConfig = async (input) => {
   const dbPath = input.dbPath !== undefined ? String(input.dbPath || '').trim() : undefined;
   const dbUser = input.dbUser !== undefined ? String(input.dbUser || '').trim() : undefined;
   const intervalMs = input.intervalMs !== undefined ? safeNumber(input.intervalMs) : undefined;
+  const scheduleTimes = input.scheduleTimes !== undefined ? normalizeScheduleTimes(input.scheduleTimes) : undefined;
   const timezone = input.timezone !== undefined ? normalizeTimezone(input.timezone) : undefined;
 
   let startFrom = undefined;
@@ -81,6 +113,7 @@ exports.upsertEtimeConfig = async (input) => {
   if (dbPath !== undefined) update.dbPath = dbPath;
   if (dbUser !== undefined) update.dbUser = dbUser;
   if (intervalMs !== undefined) update.intervalMs = intervalMs;
+  if (scheduleTimes !== undefined) update.scheduleTimes = scheduleTimes;
   if (timezone !== undefined) update.timezone = timezone;
   if (startFrom !== undefined) update.startFrom = startFrom || undefined;
   if (dbPasswordEnc !== undefined) update.dbPasswordEnc = dbPasswordEnc;
@@ -107,6 +140,7 @@ exports.getPublicEtimeConfig = async () => {
     user: cfg.user,
     startFrom: cfg.startFrom ? cfg.startFrom.toISOString() : null,
     intervalMs: cfg.intervalMs,
+    scheduleTimes: cfg.scheduleTimes,
     timezone: cfg.timezone,
     updatedAt: cfg.updatedAt
   };

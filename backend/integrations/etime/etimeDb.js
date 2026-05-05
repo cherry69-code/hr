@@ -117,10 +117,101 @@ const toAccessDateLiteral = (value) => {
   return `#${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}#`;
 };
 
+const normalizeKey = (value) => String(value ?? '').trim().toLowerCase();
+
+const buildAccessEmployeeResolver = async (cfg) => {
+  const employees = await runAccessQuery(
+    cfg,
+    `
+      SELECT
+        [EmployeeId],
+        [EmployeeCode],
+        [EmployeeCodeInDevice],
+        [NumericCode],
+        [StringCode]
+      FROM [Employees]
+    `
+  ).catch(() => []);
+
+  const lookup = new Map();
+  for (const row of employees) {
+    const preferredCode = String(row.EmployeeCodeInDevice || row.EmployeeCode || row.StringCode || row.NumericCode || row.EmployeeId || '').trim();
+    if (!preferredCode) continue;
+    const keys = [
+      row.EmployeeId,
+      row.EmployeeCode,
+      row.EmployeeCodeInDevice,
+      row.NumericCode,
+      row.StringCode
+    ];
+    for (const key of keys) {
+      const normalized = normalizeKey(key);
+      if (normalized && !lookup.has(normalized)) {
+        lookup.set(normalized, preferredCode);
+      }
+    }
+  }
+
+  return (rawId) => {
+    const normalized = normalizeKey(rawId);
+    if (!normalized) return '';
+    return lookup.get(normalized) || String(rawId).trim();
+  };
+};
+
+const toAccessDate = (raw) => {
+  const dt = raw instanceof Date ? raw : new Date(String(raw || ''));
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const parseTimeLike = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  const full = new Date(text);
+  if (!Number.isNaN(full.getTime())) return full;
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] || 0);
+  const meridiem = String(match[4] || '').toUpperCase();
+  if (meridiem === 'PM' && hours < 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || !Number.isInteger(seconds)) return null;
+  return { hours, minutes, seconds };
+};
+
+const combineAccessDateAndTime = (baseDateRaw, timeRaw) => {
+  const baseDate = toAccessDate(baseDateRaw);
+  if (!baseDate) return null;
+  const timeOnly = parseTimeLike(timeRaw);
+  if (timeOnly && !(timeOnly instanceof Date)) {
+    const combined = new Date(baseDate);
+    combined.setHours(timeOnly.hours, timeOnly.minutes, timeOnly.seconds, 0);
+    return combined;
+  }
+  return timeOnly instanceof Date ? timeOnly : baseDate;
+};
+
+const dedupePunchRows = (rows) => {
+  const seen = new Set();
+  return (rows || []).filter((row) => {
+    const employeeCode = String(row?.UserId || '').trim();
+    const logDate = toAccessDate(row?.LogDate);
+    if (!employeeCode || !logDate) return false;
+    const key = `${employeeCode}|${logDate.toISOString()}|${String(row?.CHECKTYPE || 'I').trim().toUpperCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    row.LogDate = logDate;
+    return true;
+  });
+};
+
 const fetchAccessDeviceLogsSince = async (sinceTime, override) => {
   const cfg = getConfig(override);
   ensureConfig('access', cfg);
   const since = toAccessDateLiteral(sinceTime);
+  const resolveEmployeeCode = await buildAccessEmployeeResolver(cfg);
 
   const deviceLogSql = `
     SELECT
@@ -133,50 +224,76 @@ const fetchAccessDeviceLogsSince = async (sinceTime, override) => {
     ORDER BY [LogDate] ASC
   `;
 
-  const deviceLogRows = await runAccessQuery(cfg, deviceLogSql).catch(() => []);
-  if (deviceLogRows.length) {
-    return deviceLogRows.map((row) => ({
-      UserId: row.UserId,
-      LogDate: row.LogDate,
-      DeviceId: row.DeviceId,
-      CHECKTYPE: String(row.Direction || '').trim().toUpperCase() === 'OUT' ? 'O' : 'I',
-      VERIFYCODE: null
-    }));
-  }
+  const deviceLogRows = await runAccessQuery(cfg, deviceLogSql)
+    .catch(() => [])
+    .then((rows) =>
+      rows.map((row) => ({
+        UserId: resolveEmployeeCode(row.UserId),
+        LogDate: toAccessDate(row.LogDate),
+        DeviceId: row.DeviceId,
+        CHECKTYPE: String(row.Direction || '').trim().toUpperCase() === 'OUT' ? 'O' : 'I',
+        VERIFYCODE: null
+      }))
+    );
 
   const attendanceInSql = `
     SELECT
+      [AttendanceDate],
       [EmployeeId],
       [InTime],
       [InDeviceId]
     FROM [AttendanceLogs]
-    WHERE [InTime] IS NOT NULL AND [InTime] > ${since}
-    ORDER BY [InTime] ASC
+    WHERE [InTime] IS NOT NULL AND [AttendanceDate] >= ${since}
+    ORDER BY [AttendanceDate] ASC
   `;
 
   const attendanceOutSql = `
     SELECT
+      [AttendanceDate],
       [EmployeeId],
       [OutTime],
       [OutDeviceId]
     FROM [AttendanceLogs]
-    WHERE [OutTime] IS NOT NULL AND [OutTime] > ${since}
-    ORDER BY [OutTime] ASC
+    WHERE [OutTime] IS NOT NULL AND [AttendanceDate] >= ${since}
+    ORDER BY [AttendanceDate] ASC
   `;
 
   const inRows = await runAccessQuery(cfg, attendanceInSql).catch(() => []);
   const outRows = await runAccessQuery(cfg, attendanceOutSql).catch(() => []);
 
-  return [...inRows, ...outRows]
-    .map((row) => ({
-      UserId: row.EmployeeId,
-      LogDate: row.InTime || row.OutTime || null,
-      DeviceId: row.InDeviceId || row.OutDeviceId || '',
-      CHECKTYPE: row.InTime ? 'I' : 'O',
-      VERIFYCODE: null
-    }))
-    .filter((row) => row.LogDate)
-    .sort((a, b) => new Date(a.LogDate).getTime() - new Date(b.LogDate).getTime());
+  const attendanceRows = [...inRows, ...outRows].map((row) => ({
+    UserId: resolveEmployeeCode(row.EmployeeId),
+    LogDate: combineAccessDateAndTime(row.AttendanceDate, row.InTime || row.OutTime),
+    DeviceId: row.InDeviceId || row.OutDeviceId || '',
+    CHECKTYPE: row.InTime ? 'I' : 'O',
+    VERIFYCODE: null
+  }));
+
+  const punchTimeSql = `
+    SELECT
+      [tktno],
+      [date],
+      [INOUT]
+    FROM [PunchTimeDetails]
+    WHERE [date] > ${since}
+    ORDER BY [date] ASC
+  `;
+
+  const punchTimeRows = await runAccessQuery(cfg, punchTimeSql)
+    .catch(() => [])
+    .then((rows) =>
+      rows.map((row) => ({
+        UserId: resolveEmployeeCode(row.tktno),
+        LogDate: toAccessDate(row.date),
+        DeviceId: '',
+        CHECKTYPE: String(row.INOUT || '').trim().toUpperCase() === 'OUT' ? 'O' : 'I',
+        VERIFYCODE: null
+      }))
+    );
+
+  return dedupePunchRows([...deviceLogRows, ...attendanceRows, ...punchTimeRows]).sort(
+    (a, b) => new Date(a.LogDate).getTime() - new Date(b.LogDate).getTime()
+  );
 };
 
 exports.fetchDeviceLogsSince = async (sinceTime, overrideConfig) => {
