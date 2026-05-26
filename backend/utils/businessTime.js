@@ -38,6 +38,17 @@ const parseHmToMinutes = (hm, fallbackMinutes) => {
   return hh * 60 + mm;
 };
 
+const CHECK_IN_CUTOFF_TUE_FRI_MINUTES = 9 * 60 + 45;
+const CHECK_IN_CUTOFF_DEFAULT_MINUTES = 10 * 60;
+
+const isTuesdayToFriday = (date) => {
+  const day = getBusinessParts(date).dayOfWeek;
+  return day >= 2 && day <= 5;
+};
+
+const getCheckInCutoffMinutes = (date) =>
+  isTuesdayToFriday(date) ? CHECK_IN_CUTOFF_TUE_FRI_MINUTES : CHECK_IN_CUTOFF_DEFAULT_MINUTES;
+
 const getBusinessDayBounds = (date) => {
   const parts = getBusinessParts(date);
   const offsetMs = getBusinessTzOffsetMinutes() * 60 * 1000;
@@ -53,5 +64,6 @@ module.exports = {
   getBusinessDayBounds,
   getBusinessMinutes,
   getBusinessParts,
+  getCheckInCutoffMinutes,
   parseHmToMinutes
 };
