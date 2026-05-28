@@ -4,8 +4,9 @@ const Location = require('../models/Location');
 const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
-const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, getCheckInCutoffMinutes } = require('../utils/businessTime');
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts } = require('../utils/businessTime');
 
+const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
 
@@ -57,7 +58,7 @@ const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationI
 };
 
 const getAttendanceStatus = ({ checkInTime, checkOutTime }) => {
-  const inCutoffMinutes = getCheckInCutoffMinutes(checkInTime);
+  const inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
   const outCutoffMinutes = CHECK_OUT_CUTOFF_HOUR * 60 + CHECK_OUT_CUTOFF_MINUTE;
   const checkInMinutes = getBusinessMinutes(checkInTime);
   const checkOutMinutes = checkOutTime ? getBusinessMinutes(checkOutTime) : null;
@@ -145,7 +146,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   }
 
   // 3. Status Logic (Half Day vs Present)
-  // Max login time: 9:45 AM Tue–Fri, 10:00 AM Sat–Sun
+  // Max Login Time: 10:00 AM
   const statusInfo = getAttendanceStatus({ checkInTime: now, checkOutTime: null });
 
   let photoUrl = '';

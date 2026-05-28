@@ -2,8 +2,9 @@ const Attendance = require('../models/Attendance');
 const FieldAttendanceLog = require('../models/FieldAttendanceLog');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
-const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, getCheckInCutoffMinutes } = require('../utils/businessTime');
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts } = require('../utils/businessTime');
 
+const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
 
@@ -74,7 +75,7 @@ const validateGps = ({ latitude, longitude, gpsAccuracyMeters }) => {
 };
 
 const computeStatus = (checkInTime) => {
-  return getBusinessMinutes(checkInTime) > getCheckInCutoffMinutes(checkInTime) ? 'Half Day' : 'Present';
+  return getBusinessMinutes(checkInTime) > CHECK_IN_CUTOFF_HOUR * 60 ? 'Half Day' : 'Present';
 };
 
 exports.fieldCheckIn = asyncHandler(async (req, res) => {
@@ -204,7 +205,7 @@ exports.fieldCheckOut = asyncHandler(async (req, res) => {
   attendance.source = 'FIELD_FACE_GPS';
   const checkInMinutes = getBusinessMinutes(checkInTime);
   const checkOutMinutes = getBusinessMinutes(now);
-  const inCutoffMinutes = getCheckInCutoffMinutes(checkInTime);
+  const inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
   const outCutoffMinutes = CHECK_OUT_CUTOFF_HOUR * 60 + CHECK_OUT_CUTOFF_MINUTE;
   attendance.lateFlag = checkInMinutes > inCutoffMinutes;
   attendance.lateMinutes = attendance.lateFlag ? checkInMinutes - inCutoffMinutes : 0;
