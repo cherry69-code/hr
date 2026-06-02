@@ -52,6 +52,8 @@ const cloudinaryPublicIdFromUrl = (rawUrl) => {
   if (match && match[1]) return match[1];
   const match2 = url.match(/\/raw\/upload\/(?:v\d+\/)?(.+)$/);
   if (match2 && match2[1]) return match2[1].replace(/\.pdf$/i, '');
+  // Fallback: if we ever stored a Cloudinary public_id directly.
+  if (/^payslips\/.+/.test(url)) return url.replace(/\.pdf$/i, '');
   return '';
 };
 
@@ -122,6 +124,14 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
     };
   }
 
+  // Salary policy:
+  // Monthly = (Annual CTC / 12)
+  // Per day = Monthly / daysInMonth
+  // Net = Per day * paid days (Present + Weekly Off Work + 0.5 * Half Day), capped by eligibleDays
+  const ctcMonthlyByPolicy = effectiveCtc > 0 ? effectiveCtc / 12 : 0;
+  const perDayByPolicy = daysInMonth > 0 ? ctcMonthlyByPolicy / daysInMonth : 0;
+  const netSalaryByPolicy = round2(perDayByPolicy * Number(payableDays || 0));
+
   const monthName = new Date(y, m - 1).toLocaleString('default', { month: 'long' });
 
   let incentiveCash = 0;
@@ -169,16 +179,16 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
     doc.text(`Proration Factor: ${(prorationFactor * 100).toFixed(2)}%`);
   }
 
-  doc.text(`CTC (Annual): ${payroll.ctcAnnual.toFixed(2)}`);
-  doc.text(`Gross Salary: ${payroll.gross.toFixed(2)}`);
+  doc.text(`CTC (Annual): ${Number(payroll.ctcAnnual || 0).toFixed(2)}`);
+  doc.text(`CTC Monthly (CTC/12): ${round2(ctcMonthlyByPolicy).toFixed(2)}`);
+  doc.text(`Per Day (Monthly/${daysInMonth}): ${round2(perDayByPolicy).toFixed(2)}`);
+  doc.text(`Gross Salary: ${netSalaryByPolicy.toFixed(2)}`);
   doc.text(`Incentive Cash (Approved/Paid): ${incentiveCash.toFixed(2)}`);
   doc.text(`Incentive ESOP (Approved/Paid): ${incentiveEsop.toFixed(2)}`);
   if (incentiveStatus) {
     doc.text(`Incentive Status: ${incentiveStatus}`);
   }
-  const baseNet = Number(payroll.gross || 0) - Number(payroll.deductions?.totalDeductions || 0);
-  const netWithIncentive = baseNet + incentiveCash;
-  doc.text(`Net Salary: ${netWithIncentive.toFixed(2)}`);
+  doc.text(`Net Salary: ${netSalaryByPolicy.toFixed(2)}`);
   doc.moveDown();
 
   const tableTop = doc.y + 10;
@@ -231,7 +241,7 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
 
   doc.font('Helvetica-Bold');
   doc.text('Net In-Hand', 300, yPos);
-  doc.text(netWithIncentive.toFixed(2), 550, yPos, { align: 'right' });
+  doc.text(netSalaryByPolicy.toFixed(2), 550, yPos, { align: 'right' });
   yPos += 30;
 
   doc.font('Helvetica');
@@ -269,8 +279,8 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
     month: m,
     year: y,
     status: 'Generated',
-    ctcAnnual: payroll.ctcAnnual,
-    ctcMonthly: payroll.ctcMonthly,
+    ctcAnnual: round2(Number(payroll.ctcAnnual || effectiveCtc || 0)),
+    ctcMonthly: round2(ctcMonthlyByPolicy),
     attendance: {
       totalWorkingDays: Number(eligibleDays || 0),
       presentDays: Number(payableDays || 0),
@@ -280,12 +290,12 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
       basic: payroll.basic,
       hra: payroll.hra,
       specialAllowance: Number(payroll.specialAllowance || 0),
-      grossSalary: payroll.gross
+      grossSalary: netSalaryByPolicy
     },
     salaryBreakdown: {
       basic: payroll.basic,
       hra: payroll.hra,
-      gross: payroll.gross
+      gross: netSalaryByPolicy
     },
     employerContributions: {
       employerPF: payroll.employerPF,
@@ -307,7 +317,7 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
       monthlyTDS: Number(payroll.deductions?.monthlyTDS || 0),
       totalDeductions: Number(payroll.deductions?.totalDeductions || 0)
     },
-    netSalary: netWithIncentive,
+    netSalary: netSalaryByPolicy,
     pdfUrl,
     generatedAt: new Date()
   };
