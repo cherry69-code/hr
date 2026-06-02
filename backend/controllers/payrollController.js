@@ -43,8 +43,13 @@ const attendanceStats = async (employeeObjectId, start, end) => {
   return { presentEquivalent, unpaidEquivalent, total };
 };
 
-const cloudinarySignedRawUrlFromPublicId = (publicId) =>
-  cloudinary.url(publicId, { resource_type: 'raw', type: 'upload', format: 'pdf', secure: true, sign_url: true });
+const cloudinarySignedRawUrlFromPublicId = (publicId) => {
+  const id = String(publicId || '').trim();
+  const hasPdfExt = id.toLowerCase().endsWith('.pdf');
+  const opts = { resource_type: 'raw', type: 'upload', secure: true, sign_url: true };
+  if (!hasPdfExt) opts.format = 'pdf';
+  return cloudinary.url(id, opts);
+};
 
 const cloudinaryPublicIdFromUrl = (rawUrl) => {
   const url = String(rawUrl || '').split('?')[0];
