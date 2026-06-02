@@ -51,6 +51,21 @@ const cloudinarySignedRawUrlFromPublicId = (publicId) => {
   return cloudinary.url(id, opts);
 };
 
+const cloudinaryPrivateDownloadUrlFromPublicId = (publicId) => {
+  const id = String(publicId || '').trim();
+  const hasPdfExt = id.toLowerCase().endsWith('.pdf');
+  return cloudinary.utils.private_download_url(
+    id,
+    hasPdfExt ? null : 'pdf',
+    {
+      resource_type: 'raw',
+      type: 'upload',
+      attachment: true,
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 10
+    }
+  );
+};
+
 const cloudinaryPublicIdFromUrl = (rawUrl) => {
   const url = String(rawUrl || '').split('?')[0];
   const match = url.match(/\/raw\/(?:upload|private)\/(?:s--[^/]+--\/)?(?:v\d+\/)?(.+)\.pdf$/);
@@ -540,7 +555,7 @@ exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
   }
 
   if (!publicId || !exists) return res.status(404).json({ success: false, error: 'pdf not available; regenerate payroll for this month' });
-  const url = cloudinarySignedRawUrlFromPublicId(publicId);
+  const url = cloudinaryPrivateDownloadUrlFromPublicId(publicId) || cloudinarySignedRawUrlFromPublicId(publicId);
   return res.status(200).json({ success: true, url });
 });
 
