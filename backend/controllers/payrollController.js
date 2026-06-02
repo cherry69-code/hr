@@ -57,13 +57,19 @@ const cloudinaryPublicIdFromUrl = (rawUrl) => {
   return '';
 };
 
-const cloudinaryRawExists = async (publicId) => {
-  try {
-    await cloudinary.api.resource(String(publicId || ''), { resource_type: 'raw', type: 'upload' });
-    return true;
-  } catch {
-    return false;
+const resolveExistingCloudinaryRawPublicId = async (...ids) => {
+  const candidates = [...new Set(ids
+    .map((id) => String(id || '').trim())
+    .filter(Boolean)
+    .flatMap((id) => (id.toLowerCase().endsWith('.pdf') ? [id] : [id, `${id}.pdf`])))]
+    .slice(0, 8);
+  for (const candidate of candidates) {
+    try {
+      await cloudinary.api.resource(candidate, { resource_type: 'raw', type: 'upload' });
+      return candidate;
+    } catch {}
   }
+  return '';
 };
 
 const generatePayslipForEmployee = async (req, employee, month, year, input = {}) => {
@@ -509,8 +515,8 @@ exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
   let expectedPublicId = employeeObjectId
     ? `payslips/${employeeObjectId}/${Number(payslip.year)}/${String(Number(payslip.month)).padStart(2, '0')}`
     : '';
-  let publicId = expectedPublicId || cloudinaryPublicIdFromUrl(payslip.pdfUrl);
-  let exists = publicId ? await cloudinaryRawExists(publicId) : false;
+  let publicId = await resolveExistingCloudinaryRawPublicId(expectedPublicId, cloudinaryPublicIdFromUrl(payslip.pdfUrl));
+  let exists = Boolean(publicId);
 
   // Self-heal missing Cloudinary artifacts for old/broken records.
   if (!exists && employeeObjectId) {
@@ -522,8 +528,8 @@ exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
         expectedPublicId = employeeObjectId
           ? `payslips/${employeeObjectId}/${Number(payslip?.year)}/${String(Number(payslip?.month)).padStart(2, '0')}`
           : '';
-        publicId = cloudinaryPublicIdFromUrl(payslip?.pdfUrl) || expectedPublicId;
-        exists = publicId ? await cloudinaryRawExists(publicId) : false;
+        publicId = await resolveExistingCloudinaryRawPublicId(expectedPublicId, cloudinaryPublicIdFromUrl(payslip?.pdfUrl));
+        exists = Boolean(publicId);
       } catch {}
     }
   }
