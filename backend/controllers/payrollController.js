@@ -11,6 +11,7 @@ const cloudinary = require('../config/cloudinary');
 const { calculatePayroll } = require('../services/payroll.service');
 const AuditLog = require('../models/AuditLog');
 const IncentiveCalculation = require('../models/IncentiveCalculation');
+const { getBusinessParts } = require('../utils/businessTime');
 
 const monthRange = (month, year) => {
   const m = Number(month);
@@ -24,23 +25,62 @@ const monthRange = (month, year) => {
   return { startOfMonth, endDay, endOfMonth, daysInMonth: endDay.getDate() };
 };
 
-const attendanceStats = async (employeeObjectId, start, end) => {
-  const rows = await Attendance.aggregate([
-    { $match: { employeeId: employeeObjectId, date: { $gte: start, $lte: end } } },
-    { $group: { _id: '$status', count: { $sum: 1 } } }
-  ]).catch(() => []);
-  const byStatus = new Map(rows.map((r) => [String(r._id || ''), Number(r.count || 0)]));
-  const present =
-    (byStatus.get('Present') || 0) +
-    (byStatus.get('Late') || 0) +
-    (byStatus.get('Weekly Off Work') || 0);
-  const half = byStatus.get('Half Day') || 0;
-  const lop = byStatus.get('LOP') || 0;
-  const absent = (byStatus.get('Absent') || 0) + (byStatus.get('Missed Punch') || 0);
-  const presentEquivalent = present + 0.5 * half;
-  const unpaidEquivalent = lop + absent + 0.5 * half;
-  const total = rows.reduce((acc, r) => acc + Number(r.count || 0), 0);
-  return { presentEquivalent, unpaidEquivalent, total };
+const businessDateKey = (date) => {
+  const p = getBusinessParts(date);
+  return `${p.year}-${String(p.month + 1).padStart(2, '0')}-${String(p.dayOfMonth).padStart(2, '0')}`;
+};
+
+const paidWeightForStatus = (status) => {
+  const s = String(status || '');
+  if (['Present', 'Late', 'Weekly Off Work'].includes(s)) return 1;
+  if (s === 'Half Day') return 0.5;
+  return 0;
+};
+
+const unpaidWeightForStatus = (status) => {
+  const s = String(status || '');
+  if (s === 'LOP' || s === 'Absent' || s === 'Missed Punch') return 1;
+  if (s === 'Half Day') return 0.5;
+  return 0;
+};
+
+// Monday = weekly off (paid). Count each Monday in range when there is no attendance row, or when status is paid.
+const countPayableDaysWithMondayWeeklyOff = async (employeeObjectId, start, end) => {
+  const records = await Attendance.find({
+    employeeId: employeeObjectId,
+    date: { $gte: start, $lte: end }
+  })
+    .select('date status')
+    .lean();
+
+  const statusByDay = new Map();
+  for (const r of records) {
+    statusByDay.set(businessDateKey(r.date), String(r.status || ''));
+  }
+
+  let paid = 0;
+  let unpaid = 0;
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const endDate = new Date(end);
+  endDate.setHours(0, 0, 0, 0);
+
+  while (cursor.getTime() <= endDate.getTime()) {
+    const key = businessDateKey(cursor);
+    const isMonday = getBusinessParts(cursor).dayOfWeek === 1;
+    const status = statusByDay.get(key);
+
+    if (status) {
+      paid += paidWeightForStatus(status);
+      unpaid += unpaidWeightForStatus(status);
+    } else if (isMonday) {
+      paid += 1;
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return { paid, unpaid, hasRecords: records.length > 0 };
 };
 
 const cloudinarySignedRawUrlFromPublicId = (publicId) => {
@@ -131,10 +171,12 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
     eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   }
 
-  const a = await attendanceStats(employee._id, effectiveStart, endOfMonth);
-  const useAttendance = a.total > 0;
-  const payableDays = useAttendance ? Math.min(eligibleDays, Math.max(0, a.presentEquivalent)) : eligibleDays;
-  const unpaidDays = useAttendance ? Math.min(eligibleDays, Math.max(0, a.unpaidEquivalent)) : 0;
+  const dayStats = await countPayableDaysWithMondayWeeklyOff(employee._id, effectiveStart, endDay);
+  const useAttendance = dayStats.hasRecords;
+  const payableDays = useAttendance
+    ? Math.min(eligibleDays, Math.max(0, dayStats.paid))
+    : eligibleDays;
+  const unpaidDays = useAttendance ? Math.min(eligibleDays, Math.max(0, dayStats.unpaid)) : 0;
 
   const prorationFactor = eligibleDays > 0 ? payableDays / eligibleDays : 1;
   if (prorationFactor >= 0 && prorationFactor < 1) {
@@ -162,7 +204,7 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
   // Salary policy:
   // Monthly = (Annual CTC / 12)
   // Per day = Monthly / daysInMonth
-  // Net = Per day * paid days (Present + Weekly Off Work + 0.5 * Half Day), capped by eligibleDays
+  // Net = Per day * paid days (Present + Monday weekly off + Weekly Off Work + 0.5 * Half Day), capped by eligibleDays
   const ctcMonthlyByPolicy = effectiveCtc > 0 ? effectiveCtc / 12 : 0;
   const perDayByPolicy = daysInMonth > 0 ? ctcMonthlyByPolicy / daysInMonth : 0;
   const netSalaryByPolicy = round2(perDayByPolicy * Number(payableDays || 0));
