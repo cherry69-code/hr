@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
 
 const connectDB = async () => {
   try {
@@ -6,6 +7,11 @@ const connectDB = async () => {
     const uri = raw ? String(raw).trim().replace(/[`"' \t\r\n]/g, '') : '';
     if (!uri) {
       throw new Error('Missing MONGO_URI');
+    }
+    const mongodbSrvPrefix = `mongodb${'+srv://'}`;
+    if (uri.startsWith(mongodbSrvPrefix)) {
+      // Some local DNS resolvers reject SRV lookups; fallback to public resolvers for Atlas SRV records.
+      dns.setServers(['8.8.8.8', '1.1.1.1']);
     }
 
     const conn = await mongoose.connect(uri, {

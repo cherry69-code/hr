@@ -48,9 +48,9 @@ const cloudinarySignedRawUrlFromPublicId = (publicId) =>
 
 const cloudinaryPublicIdFromUrl = (rawUrl) => {
   const url = String(rawUrl || '').split('?')[0];
-  const match = url.match(/\/raw\/upload\/(?:v\d+\/)?(.+)\.pdf$/);
+  const match = url.match(/\/raw\/(?:upload|private)\/(?:s--[^/]+--\/)?(?:v\d+\/)?(.+)\.pdf$/);
   if (match && match[1]) return match[1];
-  const match2 = url.match(/\/raw\/upload\/(?:v\d+\/)?(.+)$/);
+  const match2 = url.match(/\/raw\/(?:upload|private)\/(?:s--[^/]+--\/)?(?:v\d+\/)?(.+)$/);
   if (match2 && match2[1]) return match2[1].replace(/\.pdf$/i, '');
   // Fallback: if we ever stored a Cloudinary public_id directly.
   if (/^payslips\/.+/.test(url)) return url.replace(/\.pdf$/i, '');
@@ -496,7 +496,11 @@ exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
   const isPrivileged = ['admin', 'hr'].includes(String(req.user?.role || ''));
   if (!isOwner && !isPrivileged) return res.status(403).json({ success: false, error: 'Not authorized' });
 
-  const publicId = cloudinaryPublicIdFromUrl(payslip.pdfUrl);
+  const employeeObjectId = String((payslip.employeeId?._id || payslip.employeeId) || '').trim();
+  const expectedPublicId = employeeObjectId
+    ? `payslips/${employeeObjectId}/${Number(payslip.year)}/${String(Number(payslip.month)).padStart(2, '0')}`
+    : '';
+  const publicId = expectedPublicId || cloudinaryPublicIdFromUrl(payslip.pdfUrl);
   if (!publicId) return res.status(404).json({ success: false, error: 'pdf not available' });
   const url = cloudinarySignedRawUrlFromPublicId(publicId);
   return res.status(200).json({ success: true, url });
