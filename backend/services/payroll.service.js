@@ -12,8 +12,8 @@ const calculatePayroll = async (employeeData) => {
 
   const rawBasic = employeeData?.monthlyBasic;
   const basic = Number(rawBasic !== undefined && rawBasic !== null && rawBasic !== '' ? rawBasic : ctcMonthly * 0.5);
-  const employerPF = basic * 0.12;
-  const employeePF = basic * 0.12;
+  const employerPF = 0;
+  const employeePF = 0;
   const gratuity = basic * 0.0481;
 
   const gross = Math.max(0, ctcMonthly - employerPF - gratuity);

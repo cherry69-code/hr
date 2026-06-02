@@ -227,66 +227,71 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
   doc.moveDown();
 
   const tableTop = doc.y + 10;
+  const earningsLabelX = 50;
+  const earningsAmountX = 180;
+  const deductionsLabelX = 300;
+  const deductionsAmountX = 480;
+  const amountColWidth = 70;
   doc.font('Helvetica-Bold');
-  doc.text('Earnings', 50, tableTop);
-  doc.text('Amount (INR)', 250, tableTop, { align: 'right' });
-  doc.text('Deductions', 300, tableTop);
-  doc.text('Amount (INR)', 550, tableTop, { align: 'right' });
+  doc.text('Earnings', earningsLabelX, tableTop);
+  doc.text('Amount (INR)', earningsAmountX, tableTop, { width: amountColWidth, align: 'right' });
+  doc.text('Deductions', deductionsLabelX, tableTop);
+  doc.text('Amount (INR)', deductionsAmountX, tableTop, { width: amountColWidth, align: 'right' });
   doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
 
   let yPos = tableTop + 30;
   doc.font('Helvetica');
 
-  doc.text('Basic', 50, yPos);
-  doc.text(payroll.basic.toFixed(2), 250, yPos, { align: 'right' });
-  doc.text('Employee PF', 300, yPos);
-  doc.text(Number(payroll.deductions?.employeePF || 0).toFixed(2), 550, yPos, { align: 'right' });
+  doc.text('Basic', earningsLabelX, yPos);
+  doc.text(payroll.basic.toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
+  doc.text('Employee PF', deductionsLabelX, yPos);
+  doc.text(Number(payroll.deductions?.employeePF || 0).toFixed(2), deductionsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
-  doc.text('HRA', 50, yPos);
-  doc.text(payroll.hra.toFixed(2), 250, yPos, { align: 'right' });
-  doc.text('Professional Tax', 300, yPos);
-  doc.text(Number(payroll.deductions?.professionalTax || 0).toFixed(2), 550, yPos, { align: 'right' });
+  doc.text('HRA', earningsLabelX, yPos);
+  doc.text(payroll.hra.toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
+  doc.text('Professional Tax', deductionsLabelX, yPos);
+  doc.text(Number(payroll.deductions?.professionalTax || 0).toFixed(2), deductionsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
-  doc.text('Conveyance', 50, yPos);
-  doc.text(Number(payroll.conveyance || 0).toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Conveyance', earningsLabelX, yPos);
+  doc.text(Number(payroll.conveyance || 0).toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
-  doc.text('Special Allowance', 50, yPos);
-  doc.text(Number(payroll.specialAllowance || 0).toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Special Allowance', earningsLabelX, yPos);
+  doc.text(Number(payroll.specialAllowance || 0).toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
-  doc.text('Monthly Incentive Accrual', 50, yPos);
-  doc.text(Number(0).toFixed(2), 250, yPos, { align: 'right' });
-  doc.text('TDS', 300, yPos);
-  doc.text(Number(payroll.deductions?.monthlyTDS || 0).toFixed(2), 550, yPos, { align: 'right' });
+  doc.text('Monthly Incentive Accrual', earningsLabelX, yPos);
+  doc.text(Number(0).toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
+  doc.text('TDS', deductionsLabelX, yPos);
+  doc.text(Number(payroll.deductions?.monthlyTDS || 0).toFixed(2), deductionsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
-  doc.text('Override Bonus', 50, yPos);
-  doc.text(Number(0).toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Override Bonus', earningsLabelX, yPos);
+  doc.text(Number(0).toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 30;
 
-  doc.text('Incentive Cash', 50, yPos);
-  doc.text(incentiveCash.toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Incentive Cash', earningsLabelX, yPos);
+  doc.text(incentiveCash.toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
 
   doc.moveTo(50, yPos).lineTo(550, yPos).stroke();
   yPos += 10;
 
   doc.font('Helvetica-Bold');
-  doc.text('Net In-Hand', 300, yPos);
-  doc.text(netSalaryByPolicy.toFixed(2), 550, yPos, { align: 'right' });
+  doc.text('Net In-Hand', deductionsLabelX, yPos);
+  doc.text(netSalaryByPolicy.toFixed(2), deductionsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 30;
 
   doc.font('Helvetica');
-  doc.text('Employer Contributions', 50, yPos);
+  doc.text('Employer Contributions', earningsLabelX, yPos);
   yPos += 20;
-  doc.text('Employer PF', 50, yPos);
-  doc.text(payroll.employerPF.toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Employer PF', earningsLabelX, yPos);
+  doc.text(payroll.employerPF.toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
   yPos += 20;
-  doc.text('Gratuity', 50, yPos);
-  doc.text(payroll.gratuity.toFixed(2), 250, yPos, { align: 'right' });
+  doc.text('Gratuity', earningsLabelX, yPos);
+  doc.text(payroll.gratuity.toFixed(2), earningsAmountX, yPos, { width: amountColWidth, align: 'right' });
 
   doc.end();
 
