@@ -57,6 +57,15 @@ const cloudinaryPublicIdFromUrl = (rawUrl) => {
   return '';
 };
 
+const cloudinaryRawExists = async (publicId) => {
+  try {
+    await cloudinary.api.resource(String(publicId || ''), { resource_type: 'raw', type: 'upload' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const generatePayslipForEmployee = async (req, employee, month, year, input = {}) => {
   const m = Number(month);
   const y = Number(year);
@@ -489,7 +498,7 @@ exports.generateAllPayslips = asyncHandler(async (req, res) => {
 exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
   const payslipId = String(req.params?.id || '').trim();
   if (!payslipId) return res.status(400).json({ success: false, error: 'invalid id' });
-  const payslip = await Payslip.findById(payslipId).populate('employeeId', 'role').lean();
+  let payslip = await Payslip.findById(payslipId).populate('employeeId', 'role').lean();
   if (!payslip) return res.status(404).json({ success: false, error: 'not found' });
 
   const isOwner = String((payslip.employeeId?._id || payslip.employeeId) || '') === String(req.user?._id || req.user?.id || '');
@@ -497,11 +506,29 @@ exports.getPayslipDownloadUrl = asyncHandler(async (req, res) => {
   if (!isOwner && !isPrivileged) return res.status(403).json({ success: false, error: 'Not authorized' });
 
   const employeeObjectId = String((payslip.employeeId?._id || payslip.employeeId) || '').trim();
-  const expectedPublicId = employeeObjectId
+  let expectedPublicId = employeeObjectId
     ? `payslips/${employeeObjectId}/${Number(payslip.year)}/${String(Number(payslip.month)).padStart(2, '0')}`
     : '';
-  const publicId = expectedPublicId || cloudinaryPublicIdFromUrl(payslip.pdfUrl);
-  if (!publicId) return res.status(404).json({ success: false, error: 'pdf not available' });
+  let publicId = expectedPublicId || cloudinaryPublicIdFromUrl(payslip.pdfUrl);
+  let exists = publicId ? await cloudinaryRawExists(publicId) : false;
+
+  // Self-heal missing Cloudinary artifacts for old/broken records.
+  if (!exists && employeeObjectId) {
+    const employee = await User.findById(employeeObjectId).populate('departmentId').lean();
+    if (employee) {
+      try {
+        await generatePayslipForEmployee(req, employee, Number(payslip.month), Number(payslip.year), { role: employee.role });
+        payslip = await Payslip.findById(payslipId).populate('employeeId', 'role').lean();
+        expectedPublicId = employeeObjectId
+          ? `payslips/${employeeObjectId}/${Number(payslip?.year)}/${String(Number(payslip?.month)).padStart(2, '0')}`
+          : '';
+        publicId = cloudinaryPublicIdFromUrl(payslip?.pdfUrl) || expectedPublicId;
+        exists = publicId ? await cloudinaryRawExists(publicId) : false;
+      } catch {}
+    }
+  }
+
+  if (!publicId || !exists) return res.status(404).json({ success: false, error: 'pdf not available; regenerate payroll for this month' });
   const url = cloudinarySignedRawUrlFromPublicId(publicId);
   return res.status(200).json({ success: true, url });
 });
