@@ -4,16 +4,11 @@ const Location = require('../models/Location');
 const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
-const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts } = require('../utils/businessTime');
+const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, isGeoAttendanceAllowedDay } = require('../utils/businessTime');
 
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
-
-const isGeoAttendanceAllowedDay = (date) => {
-  const day = getBusinessParts(date).dayOfWeek; // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  return day !== 1; // Tuesday to Sunday
-};
 
 const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationId }) => {
   const lat = Number(latitude);
@@ -117,7 +112,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 
   const now = new Date();
   if (!isGeoAttendanceAllowedDay(now)) {
-    return res.status(400).json({ success: false, error: 'Geo attendance is allowed only from Tuesday to Sunday' });
+    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.' });
   }
 
   // Check if already checked in today (One Punch-In Policy)
@@ -203,7 +198,7 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   const { start: today, end: endOfDay } = getBusinessDayBounds(now);
 
   if (!isGeoAttendanceAllowedDay(today)) {
-    return res.status(400).json({ success: false, error: 'Geo attendance is allowed only from Tuesday to Sunday' });
+    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.' });
   }
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {

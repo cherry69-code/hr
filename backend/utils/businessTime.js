@@ -38,6 +38,10 @@ const parseHmToMinutes = (hm, fallbackMinutes) => {
   return hh * 60 + mm;
 };
 
+const isMondayWeeklyOff = (date) => getBusinessParts(date).dayOfWeek === 1;
+
+const isGeoAttendanceAllowedDay = (date) => !isMondayWeeklyOff(date);
+
 const getBusinessDayBounds = (date) => {
   const parts = getBusinessParts(date);
   const offsetMs = getBusinessTzOffsetMinutes() * 60 * 1000;
@@ -53,5 +57,7 @@ module.exports = {
   getBusinessDayBounds,
   getBusinessMinutes,
   getBusinessParts,
+  isGeoAttendanceAllowedDay,
+  isMondayWeeklyOff,
   parseHmToMinutes
 };

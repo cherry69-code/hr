@@ -8,6 +8,7 @@ import { ToastService } from '../services/toast.service';
 import { environment } from '../../environments/environment';
 import * as L from 'leaflet';
 import { getBestPosition } from '../utils/geolocation';
+import { getBusinessDateKey, isGeoAttendanceAllowedDay as isGeoAttendanceAllowedToday } from '../utils/businessTime';
 
 @Component({
   selector: 'app-attendance-page',
@@ -40,7 +41,6 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   // Map instance (Leaflet)
   private map: any;
   private userMarker: any;
-  todayDay = new Date().getDay();
   fieldLocationAddress = '';
   pendingFieldAction: 'CHECK_IN' | 'CHECK_OUT' | null = null;
   pendingOfficeAction: 'CHECK_IN' | null = null;
@@ -59,7 +59,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   get isGeoAttendanceAllowedDay() {
-    return this.todayDay !== 1;
+    return isGeoAttendanceAllowedToday(new Date());
   }
 
   private async fileToDataUrl(file: File): Promise<string> {
@@ -266,11 +266,8 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   get todayRecord() {
-    return this.attendanceRecords.find(r => {
-      const d = new Date(r.date);
-      const today = new Date();
-      return d.toDateString() === today.toDateString();
-    });
+    const todayKey = getBusinessDateKey(new Date());
+    return this.attendanceRecords.find((r) => getBusinessDateKey(new Date(r.date)) === todayKey);
   }
 
   onPickFieldSelfie(action: 'CHECK_IN' | 'CHECK_OUT', fileInput: HTMLInputElement) {
