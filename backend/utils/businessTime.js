@@ -2,7 +2,7 @@ const DEFAULT_TZ_OFFSET_MINUTES = 330;
 
 const getBusinessTzOffsetMinutes = () => {
   const raw = Number(process.env.BUSINESS_TZ_OFFSET_MINUTES);
-  return Number.isFinite(raw) ? raw : DEFAULT_TZ_OFFSET_MINUTES;
+  return Number.isFinite(raw) && raw !== 0 ? raw : DEFAULT_TZ_OFFSET_MINUTES;
 };
 
 const shiftToBusinessClock = (date) => {

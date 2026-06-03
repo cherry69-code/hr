@@ -1,5 +1,5 @@
 const express = require('express');
-const { checkIn, checkOut, getAttendance, getTeamSummary } = require('../controllers/attendanceController');
+const { checkIn, checkOut, getAttendance, getTeamSummary, getGeoAttendancePolicy } = require('../controllers/attendanceController');
 const { requestCorrection, getCorrectionRequests, updateCorrectionStatus } = require('../controllers/attendanceCorrectionController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 
@@ -13,6 +13,7 @@ router.get('/correction', authorize('admin', 'hr'), getCorrectionRequests);
 router.put('/correction/:id', authorize('admin'), updateCorrectionStatus);
 
 router.get('/summary/team', authorize('admin', 'hr', 'manager'), getTeamSummary);
+router.get('/geo-policy/today', getGeoAttendancePolicy);
 router.post('/checkin/:employeeId', checkIn);
 router.put('/checkout/:employeeId', checkOut);
 router.get('/:employeeId', getAttendance);

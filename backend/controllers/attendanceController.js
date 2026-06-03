@@ -9,6 +9,7 @@ const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, isGeoAttenda
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
 const CHECK_OUT_CUTOFF_MINUTE = 30;
+const BUSINESS_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationId }) => {
   const lat = Number(latitude);
@@ -335,6 +336,30 @@ exports.getTeamSummary = asyncHandler(async (req, res, next) => {
   });
 
   res.status(200).json({ success: true, data: teamData });
+});
+
+// @desc    Get geo punch policy for today (IST business calendar)
+// @route   GET /api/attendance/geo-policy/today
+// @access  Private
+exports.getGeoAttendancePolicy = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const parts = getBusinessParts(now);
+  const allowed = isGeoAttendanceAllowedDay(now);
+  const businessDayName = BUSINESS_DAY_NAMES[parts.dayOfWeek] || 'Unknown';
+  const businessDate = `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.dayOfMonth).padStart(2, '0')}`;
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      allowed,
+      businessDayOfWeek: parts.dayOfWeek,
+      businessDayName,
+      businessDate,
+      message: allowed
+        ? `Geo punch is open today (${businessDayName}, IST).`
+        : 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.'
+    }
+  });
 });
 
 // @desc    Get employee attendance

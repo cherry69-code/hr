@@ -41,8 +41,11 @@
       {{ statusMessage }}
     </div>
 
-    <div class="mb-4 p-3 rounded-xl text-sm bg-blue-50 text-blue-700" *ngIf="!isFieldMode">
+    <div class="mb-4 p-3 rounded-xl text-sm bg-blue-50 text-blue-700" *ngIf="!isFieldMode && isGeoAttendanceAllowedDay">
       Monday is weekly off. Geo punch in and punch out are allowed from Tuesday to Sunday at approved locations.
+    </div>
+    <div class="mb-4 p-3 rounded-xl text-sm bg-amber-50 text-amber-800" *ngIf="!isFieldMode && !isGeoAttendanceAllowedDay">
+      Monday is weekly off. Geo punch is not available today.
     </div>
 
     <!-- Map -->

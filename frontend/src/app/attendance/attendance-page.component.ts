@@ -49,6 +49,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   cameraError = '';
   cameraTarget: 'office' | 'field' | null = null;
   private cameraStream: MediaStream | null = null;
+  geoPolicyAllowed: boolean | null = null;
+  geoPolicyMessage = '';
+  private readonly onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      this.loadGeoPolicy();
+    }
+  };
 
   get isAdmin() {
     return this.role === 'admin';
@@ -59,6 +66,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   get isGeoAttendanceAllowedDay() {
+    if (this.geoPolicyAllowed !== null) return this.geoPolicyAllowed;
     return isGeoAttendanceAllowedToday(new Date());
   }
 
@@ -130,14 +138,33 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (!this.isAdmin) {
       this.loadAttendance();
       this.loadActiveLocations();
-      if (!this.isGeoAttendanceAllowedDay) {
-        this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
-      }
+      this.loadGeoPolicy();
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
     }
   }
 
   ngOnDestroy() {
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.stopCameraStream();
+  }
+
+  loadGeoPolicy() {
+    this.http.get(`${environment.apiUrl}/attendance/geo-policy/today`).subscribe({
+      next: (res: any) => {
+        const data = res?.data || {};
+        this.geoPolicyAllowed = Boolean(data.allowed);
+        this.geoPolicyMessage = String(data.message || '');
+        if (this.geoPolicyAllowed) {
+          const blockedDayMsg = this.statusMessage.includes('Tuesday to Sunday') || this.statusMessage.includes('weekly off');
+          if (blockedDayMsg) this.statusMessage = '';
+        } else {
+          this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
+        }
+      },
+      error: () => {
+        this.geoPolicyAllowed = isGeoAttendanceAllowedToday(new Date());
+      }
+    });
   }
 
   loadAttendance() {
@@ -276,6 +303,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   onPickOfficeSelfie(fileInput: HTMLInputElement) {
+    this.loadGeoPolicy();
     this.pendingOfficeAction = 'CHECK_IN';
     this.openCameraCapture('office', fileInput);
   }
@@ -439,8 +467,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     const action = this.pendingOfficeAction;
     this.pendingOfficeAction = null;
     if (!file || !action) return;
+    this.loadGeoPolicy();
     if (!this.isGeoAttendanceAllowedDay) {
-      this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
+      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
       return;
     }
     if (this.todayRecord) {
@@ -582,8 +611,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   checkOut() {
+    this.loadGeoPolicy();
     if (!this.isGeoAttendanceAllowedDay) {
-      this.statusMessage = 'Geo attendance is allowed only from Tuesday to Sunday.';
+      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
       return;
     }
     this.loading = true;
