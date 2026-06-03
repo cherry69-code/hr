@@ -40,7 +40,11 @@ const parseHmToMinutes = (hm, fallbackMinutes) => {
 
 const isMondayWeeklyOff = (date) => getBusinessParts(date).dayOfWeek === 1;
 
-const isGeoAttendanceAllowedDay = (date) => !isMondayWeeklyOff(date);
+// Geo punch allowed on Tuesday–Sunday (IST). Monday (1) is weekly off.
+const isGeoAttendanceAllowedDay = (date) => {
+  const day = getBusinessParts(date).dayOfWeek;
+  return day === 0 || day >= 2;
+};
 
 const getBusinessDayBounds = (date) => {
   const parts = getBusinessParts(date);

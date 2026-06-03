@@ -158,7 +158,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           const blockedDayMsg = this.statusMessage.includes('Tuesday to Sunday') || this.statusMessage.includes('weekly off');
           if (blockedDayMsg) this.statusMessage = '';
         } else {
-          this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
+          this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
         }
       },
       error: () => {

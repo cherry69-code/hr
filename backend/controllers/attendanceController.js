@@ -113,7 +113,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 
   const now = new Date();
   if (!isGeoAttendanceAllowedDay(now)) {
-    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.' });
+    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.' });
   }
 
   // Check if already checked in today (One Punch-In Policy)
@@ -199,7 +199,7 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   const { start: today, end: endOfDay } = getBusinessDayBounds(now);
 
   if (!isGeoAttendanceAllowedDay(today)) {
-    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.' });
+    return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.' });
   }
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -356,8 +356,8 @@ exports.getGeoAttendancePolicy = asyncHandler(async (req, res) => {
       businessDayName,
       businessDate,
       message: allowed
-        ? `Geo punch is open today (${businessDayName}, IST).`
-        : 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.'
+        ? `Geo punch is open today (${businessDayName}, IST). Allowed days: Tuesday to Sunday.`
+        : 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.'
     }
   });
 });

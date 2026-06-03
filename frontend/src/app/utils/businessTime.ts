@@ -21,8 +21,10 @@ export const isMondayWeeklyOff = (date: Date = new Date()): boolean => {
   return getBusinessParts(date).dayOfWeek === 1;
 };
 
+// Geo punch allowed on Tuesday–Sunday (IST). Monday is weekly off.
 export const isGeoAttendanceAllowedDay = (date: Date = new Date()): boolean => {
-  return !isMondayWeeklyOff(date);
+  const day = getBusinessParts(date).dayOfWeek;
+  return day === 0 || day >= 2;
 };
 
 export const isSameBusinessDay = (a: Date, b: Date): boolean => {
