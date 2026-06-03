@@ -71,6 +71,25 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return isGeoAttendanceAllowedToday(new Date());
   }
 
+  private get employeeMongoId(): string {
+    const user = this.authService.currentUserValue || {};
+    return String(user.id || user._id || user.uid || '');
+  }
+
+  private isMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+  }
+
+  private setStatus(message: string, isSuccess = false) {
+    this.statusMessage = message;
+    if (isSuccess) {
+      this.toast.success(message);
+    } else {
+      this.toast.error(message);
+    }
+  }
+
   private async fileToDataUrl(file: File): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -176,7 +195,11 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   loadAttendance() {
-    const userId = this.authService.currentUserValue.id;
+    const userId = this.employeeMongoId;
+    if (!userId) {
+      this.setStatus('Session expired. Please log out and log in again.');
+      return;
+    }
     this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
       next: (res: any) => this.attendanceRecords = res.data,
       error: (err) => {
@@ -310,14 +333,42 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.openCameraCapture('field', fileInput);
   }
 
-  async onPickOfficeSelfie(fileInput: HTMLInputElement) {
-    const allowed = await this.loadGeoPolicy();
-    if (!allowed) {
-      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+  onPickOfficeSelfie(fileInput: HTMLInputElement) {
+    if (!this.employeeMongoId) {
+      this.setStatus('Session expired. Please log out and log in again.');
       return;
     }
+    if (!this.isGeoAttendanceAllowedDay) {
+      this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
+      return;
+    }
+    if (this.todayRecord) {
+      this.setStatus('You have already checked in today.');
+      return;
+    }
+
+    // Refresh policy in background; do not block the tap gesture (mobile selfie picker).
+    this.loadGeoPolicy().catch(() => {});
+
     this.pendingOfficeAction = 'CHECK_IN';
+    this.openOfficeSelfieCapture(fileInput);
+  }
+
+  private openOfficeSelfieCapture(fileInput: HTMLInputElement) {
+    if (this.isMobileDevice()) {
+      this.triggerSelfieFileInput(fileInput);
+      return;
+    }
     this.openCameraCapture('office', fileInput);
+  }
+
+  private triggerSelfieFileInput(fileInput: HTMLInputElement) {
+    try {
+      fileInput.value = '';
+      fileInput.click();
+    } catch {
+      this.setStatus('Unable to open camera. Please allow camera permission and try again.');
+    }
   }
 
   private canUseCameraCapture(): boolean {
@@ -326,7 +377,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
 
   private openCameraCapture(target: 'office' | 'field', fallbackInput: HTMLInputElement) {
     if (!this.canUseCameraCapture()) {
-      fallbackInput.click();
+      this.triggerSelfieFileInput(fallbackInput);
       return;
     }
     this.cameraTarget = target;
@@ -337,7 +388,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.cameraBusy = false;
       this.showCameraCapture = false;
       this.cameraTarget = null;
-      fallbackInput.click();
+      this.triggerSelfieFileInput(fallbackInput);
     });
   }
 
@@ -458,7 +509,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.pendingOfficeAction = null;
     input.value = '';
 
-    if (!file || !action) return;
+    if (!file) {
+      if (action) {
+        this.setStatus('Selfie not captured. Tap Check In again and take a photo.');
+      }
+      return;
+    }
+    if (!action) return;
     await this.handleOfficeSelfieFile(file);
   }
 
@@ -481,17 +538,23 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (!file || !action) return;
     const allowed = await this.loadGeoPolicy();
     if (!allowed) {
-      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+      this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
       return;
     }
     if (this.todayRecord) {
-      this.statusMessage = 'You have already checked in today.';
+      this.setStatus('You have already checked in today.');
+      return;
+    }
+
+    const employeeId = this.employeeMongoId;
+    if (!employeeId) {
+      this.setStatus('Session expired. Please log out and log in again.');
       return;
     }
 
     const photoBase64 = await this.compressImage(file).catch(() => '');
     if (!photoBase64) {
-      this.statusMessage = 'Selfie capture failed. Please try again.';
+      this.setStatus('Selfie capture failed. Please try again.');
       return;
     }
 
@@ -501,7 +564,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     const faceOk = await this.detectFace(photoBase64).catch(() => true);
     if (!faceOk) {
       this.loading = false;
-      this.statusMessage = 'Face not detected. Please take a clearer selfie and try again.';
+      this.setStatus('Face not detected. Please take a clearer selfie and try again.');
       return;
     }
 
@@ -518,18 +581,20 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.computeNearest(latitude, longitude);
       if (!this.withinRadius) {
         this.loading = false;
-        this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`;
+        this.setStatus(
+          `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`
+        );
         return;
       }
 
       if (!accuracy || accuracy >= 50) {
         this.loading = false;
-        this.statusMessage = 'Location not accurate. Please refresh GPS and try again.';
+        this.setStatus('Location not accurate. Please refresh GPS and try again.');
         return;
       }
 
       this.http
-        .post(`${environment.apiUrl}/attendance/checkin/${this.authService.currentUserValue.id}`, {
+        .post(`${environment.apiUrl}/attendance/checkin/${employeeId}`, {
           latitude,
           longitude,
           gpsAccuracyMeters: accuracy,
@@ -540,16 +605,17 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           next: () => {
             this.loading = false;
             this.statusMessage = 'Checked in successfully!';
+            this.toast.success('Checked in successfully!');
             this.loadAttendance();
           },
           error: (err) => {
             this.loading = false;
-            this.statusMessage = err.error?.error || 'Check-in failed';
+            this.setStatus(err.error?.error || 'Check-in failed');
           }
         });
     } catch {
       this.loading = false;
-      this.statusMessage = 'Location access denied. Please enable GPS.';
+      this.setStatus('Location access denied. Please enable GPS.');
     }
   }
 
@@ -623,9 +689,15 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   async checkOut() {
+    const employeeId = this.employeeMongoId;
+    if (!employeeId) {
+      this.setStatus('Session expired. Please log out and log in again.');
+      return;
+    }
+
     const allowed = await this.loadGeoPolicy();
     if (!allowed) {
-      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+      this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
       return;
     }
     this.loading = true;
@@ -653,7 +725,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           return;
         }
 
-        this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, {
+        this.http.put(`${environment.apiUrl}/attendance/checkout/${employeeId}`, {
           latitude,
           longitude,
           gpsAccuracyMeters: accuracy
@@ -661,11 +733,12 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           next: () => {
             this.loading = false;
             this.statusMessage = 'Checked out successfully!';
+            this.toast.success('Checked out successfully!');
             this.loadAttendance();
           },
           error: (err) => {
             this.loading = false;
-            this.statusMessage = err.error?.error || 'Check-out failed';
+            this.setStatus(err.error?.error || 'Check-out failed');
           }
         });
       })

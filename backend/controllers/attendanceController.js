@@ -67,6 +67,16 @@ const getAttendanceStatus = ({ checkInTime, checkOutTime }) => {
   return { status, lateFlag, lateMinutes, earlyExitMinutes };
 };
 
+const resolveEmployeeByParam = async (employeeParam) => {
+  const raw = String(employeeParam || '').trim();
+  if (!raw) return null;
+  if (/^[a-fA-F0-9]{24}$/.test(raw)) {
+    const byId = await User.findById(raw).lean();
+    if (byId) return byId;
+  }
+  return User.findOne({ employeeId: raw }).lean();
+};
+
 // @desc    Mark attendance (Check-in)
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
@@ -104,11 +114,15 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Face verification failed' });
   }
 
-  // 1. Fetch employee
-  const employee = await User.findById(employeeId).lean();
+  const requesterId = String(req.user?._id || req.user?.id || '');
+  const employee = await resolveEmployeeByParam(employeeId);
 
   if (!employee) {
     return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  if (requesterId && String(employee._id) !== requesterId) {
+    return res.status(403).json({ success: false, error: 'You can only check in for your own account' });
   }
 
   const now = new Date();
@@ -119,7 +133,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   // Check if already checked in today (One Punch-In Policy)
   const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(now);
   const existingAttendance = await Attendance.findOne({
-    employeeId,
+    employeeId: employee._id,
     date: { $gte: startOfDay, $lte: endOfDay }
   });
 
@@ -190,7 +204,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/attendance/checkout/:employeeId
 // @access  Private
 exports.checkOut = asyncHandler(async (req, res, next) => {
-  const employeeId = req.params.employeeId;
+  const employeeParam = req.params.employeeId;
   const { latitude, longitude, gpsAccuracyMeters, selectedLocationId } = req.body || {};
   const lat = Number(latitude);
   const lng = Number(longitude);
@@ -198,7 +212,16 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
   const now = new Date();
   const { start: today, end: endOfDay } = getBusinessDayBounds(now);
 
-  if (!isGeoAttendanceAllowedDay(today)) {
+  const requesterId = String(req.user?._id || req.user?.id || '');
+  const employee = await resolveEmployeeByParam(employeeParam);
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+  if (requesterId && String(employee._id) !== requesterId) {
+    return res.status(403).json({ success: false, error: 'You can only check out for your own account' });
+  }
+
+  if (!isGeoAttendanceAllowedDay(now)) {
     return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.' });
   }
 
@@ -212,7 +235,7 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
 
   // Find attendance for today (even if already checked out)
   const attendance = await Attendance.findOne({
-    employeeId,
+    employeeId: employee._id,
     date: { $gte: today, $lte: endOfDay }
   });
 
@@ -366,13 +389,16 @@ exports.getGeoAttendancePolicy = asyncHandler(async (req, res) => {
 // @route   GET /api/attendance/:employeeId
 // @access  Private
 exports.getAttendance = asyncHandler(async (req, res, next) => {
-  const requestedEmployeeId = String(req.params.employeeId || '');
-  const requesterId = String(req.user?._id || '');
+  const employee = await resolveEmployeeByParam(req.params.employeeId);
+  if (!employee) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+  const requesterId = String(req.user?._id || req.user?.id || '');
   const role = String(req.user?.role || '').toLowerCase();
-  const canView = requestedEmployeeId === requesterId || role === 'admin' || role === 'hr';
+  const canView = String(employee._id) === requesterId || role === 'admin' || role === 'hr';
   if (!canView) {
     return res.status(403).json({ success: false, error: 'Not authorized to view this attendance' });
   }
-  const attendance = await Attendance.find({ employeeId: req.params.employeeId }).sort('-date').lean();
+  const attendance = await Attendance.find({ employeeId: employee._id }).sort('-date').lean();
   res.status(200).json({ success: true, count: attendance.length, data: attendance });
 });
