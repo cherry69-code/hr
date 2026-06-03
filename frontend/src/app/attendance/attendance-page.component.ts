@@ -635,7 +635,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.cameraBusy = false;
 
     if (this.cameraTarget === 'office') {
-      await this.handleOfficeSelfieFile(file);
+      await this.handleOfficeSelfieFile(file, 'CHECK_IN');
     } else if (this.cameraTarget === 'field') {
       await this.handleFieldSelfieFile(file);
     }
@@ -656,21 +656,20 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   async onOfficeSelfieSelected(evt: Event) {
     const input = evt.target as HTMLInputElement;
     const file = input.files && input.files[0] ? input.files[0] : null;
-    if (!this.pendingOfficeAction) {
-      this.pendingOfficeAction = 'CHECK_IN';
-    }
-    const action = this.pendingOfficeAction;
     this.pendingOfficeAction = null;
     input.value = '';
 
     if (!file) {
-      if (action) {
-        this.setStatus('Selfie cancelled. Tap Check In (Selfie) again to open the camera.');
-      }
+      this.setStatus('Selfie cancelled. Tap Check In (Selfie) again to open the camera.');
       return;
     }
-    if (!action) return;
-    await this.handleOfficeSelfieFile(file);
+
+    try {
+      await this.handleOfficeSelfieFile(file, 'CHECK_IN');
+    } catch (err: any) {
+      this.loading = false;
+      this.setStatus(err?.message || 'Check-in failed. Please try again.');
+    }
   }
 
   private async handleFieldSelfieFile(file: File) {
@@ -686,10 +685,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.processFieldPunch(action, imageBase64);
   }
 
-  private async handleOfficeSelfieFile(file: File) {
-    const action = this.pendingOfficeAction;
+  private async handleOfficeSelfieFile(file: File, action: 'CHECK_IN' = 'CHECK_IN') {
     this.pendingOfficeAction = null;
-    if (!file || !action) return;
+    if (!file) {
+      this.setStatus('Selfie not captured. Please try again.');
+      return;
+    }
+    if (action !== 'CHECK_IN') return;
     const allowed = await this.loadGeoPolicy();
     if (!allowed) {
       this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');

@@ -52,7 +52,11 @@
       </div>
     </div>
 
-    <div *ngIf="statusMessage" class="mb-4 p-3 rounded-xl text-sm font-medium"
+    <div *ngIf="loading" class="mb-4 p-3 rounded-xl text-sm font-medium bg-blue-50 text-blue-800">
+      {{ statusMessage || 'Submitting check-in...' }}
+    </div>
+
+    <div *ngIf="statusMessage && !loading" class="mb-4 p-3 rounded-xl text-sm font-medium"
       [ngClass]="statusMessage.includes('successfully') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
       {{ statusMessage }}
     </div>
