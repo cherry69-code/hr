@@ -40,6 +40,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   gpsReady = false;
   showLocationPrompt = false;
   locationPromptMessage = 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
+  private lastKnownPosition: { lat: number; lng: number; accuracy: number | null; at: number } | null = null;
+  private readonly maxCheckInAccuracyMeters = 100;
+  private readonly gpsCacheMaxAgeMs = 5 * 60 * 1000;
   // Offsite modal
   showOffsite = false;
   // Map instance (Leaflet)
@@ -101,6 +104,11 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (this.todayRecord) return 'bg-gray-400 text-white';
     if (this.withinRadius && !this.gpsLowAccuracy) return 'bg-[#16A34A] text-white hover:bg-[#15803d]';
     return 'bg-yellow-500 text-black hover:bg-yellow-600';
+  }
+
+  private isMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   }
 
   private get employeeMongoId(): string {
@@ -179,6 +187,51 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       throw new Error('Compressed selfie is still too large');
     }
     return best;
+  }
+
+  private async ensureJpegDataUrl(file: File): Promise<string> {
+    const compressed = await this.compressImage(file).catch(() => '');
+    if (!compressed) return '';
+
+    if (/^data:image\/(jpeg|jpg);base64,/.test(compressed)) {
+      return compressed;
+    }
+
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load selfie'));
+      img.src = compressed;
+    });
+
+    const canvas = document.createElement('canvas');
+    const width = Math.max(240, Math.min(640, image.width || 640));
+    const height = Math.max(320, Math.min(800, image.height || 800));
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.72);
+  }
+
+  private async getCheckInCoordinates(): Promise<{ latitude: number; longitude: number; accuracy: number | null }> {
+    const cache = this.lastKnownPosition;
+    const cacheFresh = cache && Date.now() - cache.at < this.gpsCacheMaxAgeMs;
+    if (cacheFresh && this.withinRadius) {
+      return { latitude: cache.lat, longitude: cache.lng, accuracy: cache.accuracy };
+    }
+
+    const pos = await getBestPosition({ timeoutMs: 15000, desiredAccuracyMeters: 80 });
+    const latitude = pos.coords.latitude;
+    const longitude = pos.coords.longitude;
+    const accuracy = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+    this.lastKnownPosition = { lat: latitude, lng: longitude, accuracy, at: Date.now() };
+    this.lastGpsFixAt = new Date();
+    this.lastGpsAccuracyMeters = accuracy;
+    this.gpsLowAccuracy = accuracy !== null && accuracy > 500;
+    this.computeNearest(latitude, longitude);
+    return { latitude, longitude, accuracy };
   }
 
   ngOnInit() {
@@ -322,6 +375,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
         this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
 
         this.computeNearest(lat, lng);
+        this.lastKnownPosition = { lat, lng, accuracy: this.lastGpsAccuracyMeters, at: Date.now() };
         try {
           this.map.panTo([lat, lng]);
         } catch {}
@@ -637,16 +691,18 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const photoBase64 = await this.compressImage(file).catch(() => '');
+    const photoBase64 = await this.ensureJpegDataUrl(file);
     if (!photoBase64) {
-      this.setStatus('Selfie capture failed. Please try again.');
+      this.setStatus('Selfie capture failed. Please retake the photo.');
       return;
     }
 
     this.loading = true;
-    this.statusMessage = 'Verifying face and location...';
+    this.statusMessage = 'Submitting check-in...';
 
-    const faceOk = await this.detectFace(photoBase64).catch(() => true);
+    const faceOk = this.isMobileDevice()
+      ? true
+      : await this.detectFace(photoBase64).catch(() => true);
     if (!faceOk) {
       this.loading = false;
       this.setStatus('Face not detected. Please take a clearer selfie and try again.');
@@ -654,16 +710,8 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     }
 
     try {
-      const pos = await getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 });
-      const latitude = pos.coords.latitude;
-      const longitude = pos.coords.longitude;
-      const accuracy = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+      const { latitude, longitude, accuracy } = await this.getCheckInCoordinates();
 
-      this.lastGpsFixAt = new Date();
-      this.lastGpsAccuracyMeters = accuracy;
-      this.gpsLowAccuracy = accuracy !== null && accuracy > 500;
-
-      this.computeNearest(latitude, longitude);
       if (!this.withinRadius) {
         this.loading = false;
         this.setStatus(
@@ -672,35 +720,31 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
         return;
       }
 
-      if (!accuracy || accuracy >= 50) {
+      if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
         this.loading = false;
-        this.setStatus('Location not accurate. Please refresh GPS and try again.');
+        this.setStatus(`GPS accuracy is ${accuracy}m. Move closer to the office or tap Refresh GPS, then try again.`);
         return;
       }
 
-      this.http
-        .post(`${environment.apiUrl}/attendance/checkin/${employeeId}`, {
+      await firstValueFrom(
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${employeeId}`, {
           latitude,
           longitude,
           gpsAccuracyMeters: accuracy,
           photoBase64,
           faceVerified: faceOk
         })
-        .subscribe({
-          next: () => {
-            this.loading = false;
-            this.statusMessage = 'Checked in successfully!';
-            this.toast.success('Checked in successfully!');
-            this.loadAttendance();
-          },
-          error: (err) => {
-            this.loading = false;
-            this.setStatus(err.error?.error || 'Check-in failed');
-          }
-        });
-    } catch {
+      );
+
       this.loading = false;
-      this.setStatus('Location access denied. Please enable GPS.');
+      this.statusMessage = 'Checked in successfully!';
+      this.toast.success('Checked in successfully!');
+      this.loadAttendance();
+    } catch (err: any) {
+      this.loading = false;
+      const apiMsg = err?.error?.error;
+      const geoMsg = getGeolocationErrorMessage(err);
+      this.setStatus(apiMsg || geoMsg || err?.message || 'Check-in failed. Please try again.');
     }
   }
 
@@ -730,7 +774,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
         const longitude = pos.coords.longitude;
         const accuracy = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
 
-        if (!accuracy || accuracy >= 50) {
+        if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
           this.loading = false;
           this.statusMessage = 'Location not accurate. Please enable GPS.';
           return;
@@ -804,7 +848,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           return;
         }
 
-        if (!accuracy || accuracy >= 50) {
+        if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
           this.loading = false;
           this.statusMessage = 'Location not accurate. Please refresh GPS and try again.';
           return;

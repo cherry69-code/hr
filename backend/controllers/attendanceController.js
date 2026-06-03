@@ -92,7 +92,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Please provide location coordinates' });
   }
 
-  if (acc !== null && (!Number.isFinite(acc) || acc >= 50)) {
+  if (acc !== null && Number.isFinite(acc) && acc > 100) {
     return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
   }
 
@@ -100,9 +100,9 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Selfie is required' });
   }
 
-  const mimeMatch = photoBase64.match(/^data:(image\/(jpeg|jpg|png));base64,/);
+  const mimeMatch = photoBase64.match(/^data:(image\/(jpeg|jpg|png|webp));base64,/);
   if (!mimeMatch) {
-    return res.status(400).json({ success: false, error: 'Invalid selfie format. Only JPG/PNG allowed.' });
+    return res.status(400).json({ success: false, error: 'Invalid selfie format. Please retake the photo as JPG/PNG.' });
   }
   const base64Data = photoBase64.replace(/^data:.+;base64,/, '');
   const approxBytes = Math.floor(base64Data.length * 0.75);
@@ -171,7 +171,8 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     photoUrl = uploaded.secure_url || '';
     photoPublicId = uploaded.public_id || '';
   } catch (e) {
-    return res.status(500).json({ success: false, error: 'Selfie upload failed' });
+    console.error('[checkIn] selfie upload failed:', e?.message || e);
+    // Still record attendance when office punch is otherwise valid.
   }
 
   // 4. Create Attendance Record
@@ -229,7 +230,7 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Please provide location coordinates for check-out' });
   }
 
-  if (acc !== null && (!Number.isFinite(acc) || acc >= 50)) {
+  if (acc !== null && Number.isFinite(acc) && acc > 100) {
     return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
   }
 
