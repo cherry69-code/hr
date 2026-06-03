@@ -122,7 +122,14 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
   }
 
   if (requesterId && String(employee._id) !== requesterId) {
-    return res.status(403).json({ success: false, error: 'You can only check in for your own account' });
+    const requester = await User.findById(requesterId).select('employeeId').lean();
+    const sameEmployeeCode =
+      requester &&
+      employee.employeeId &&
+      String(requester.employeeId).toUpperCase() === String(employee.employeeId).toUpperCase();
+    if (!sameEmployeeCode) {
+      return res.status(403).json({ success: false, error: 'You can only check in for your own account' });
+    }
   }
 
   const now = new Date();
@@ -219,7 +226,14 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'Employee not found' });
   }
   if (requesterId && String(employee._id) !== requesterId) {
-    return res.status(403).json({ success: false, error: 'You can only check out for your own account' });
+    const requester = await User.findById(requesterId).select('employeeId').lean();
+    const sameEmployeeCode =
+      requester &&
+      employee.employeeId &&
+      String(requester.employeeId).toUpperCase() === String(employee.employeeId).toUpperCase();
+    if (!sameEmployeeCode) {
+      return res.status(403).json({ success: false, error: 'You can only check out for your own account' });
+    }
   }
 
   if (!isGeoAttendanceAllowedDay(now)) {

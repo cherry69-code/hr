@@ -112,8 +112,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   private get employeeMongoId(): string {
-    const user = this.authService.currentUserValue || {};
-    return String(user.id || user._id || user.uid || '');
+    return this.authService.getMongoUserId();
   }
 
   private setStatus(message: string, isSuccess = false) {
@@ -236,12 +235,28 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     if (!this.isAdmin) {
-      this.loadAttendance();
-      this.loadActiveLocations();
-      this.loadGeoPolicy();
-      this.showLocationPrompt = true;
+      this.authService.refreshMe().subscribe({
+        next: () => this.initEmployeeAttendance(),
+        error: () => this.initEmployeeAttendance()
+      });
       document.addEventListener('visibilitychange', this.onVisibilityChange);
     }
+  }
+
+  private initEmployeeAttendance() {
+    if (!this.employeeMongoId) {
+      const code = this.authService.getEmployeeCode();
+      this.setStatus(
+        code
+          ? `Session error for ${code}. Please log out and log in again with your employee code or email.`
+          : 'Session error. Please log out and log in again.'
+      );
+      return;
+    }
+    this.loadAttendance();
+    this.loadActiveLocations();
+    this.loadGeoPolicy();
+    this.showLocationPrompt = true;
   }
 
   ngOnDestroy() {
@@ -878,7 +893,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   checkOutAt(latitude: number, longitude: number) {
-    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.authService.currentUserValue.id}`, { latitude, longitude }).subscribe({
+    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.employeeMongoId}`, { latitude, longitude }).subscribe({
       next: () => {
         this.loading = false;
         this.statusMessage = 'Checked out successfully!';

@@ -4,6 +4,7 @@ import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { jwtDecode } from 'jwt-decode';
 import { Router } from '@angular/router';
 import { environment } from '../../environments/environment';
+import { resolveEmployeeCode, resolveMongoUserId } from '../utils/user-id';
 
 @Injectable({
   providedIn: 'root'
@@ -25,11 +26,22 @@ export class AuthService {
       this.currentUserSubject.next(null);
       return;
     }
+    const mongoId = resolveMongoUserId(user);
     const normalized = {
       ...user,
-      id: user.id || user._id || user.userId || user.uid
+      _id: mongoId || user._id,
+      id: mongoId,
+      employeeCode: resolveEmployeeCode(user)
     };
     this.currentUserSubject.next(normalized);
+  }
+
+  getMongoUserId(): string {
+    return resolveMongoUserId(this.currentUserValue);
+  }
+
+  getEmployeeCode(): string {
+    return resolveEmployeeCode(this.currentUserValue);
   }
 
   refreshMe(): Observable<any> {

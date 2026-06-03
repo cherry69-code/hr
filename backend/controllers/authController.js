@@ -144,11 +144,19 @@ exports.login = asyncHandler(async (req, res, next) => {
 // @route   GET /api/auth/me
 // @access  Private
 exports.getMe = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.user.id).populate('departmentId').lean();
+  const userId = req.user?._id || req.user?.id;
+  const user = await User.findById(userId).populate('departmentId').lean();
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found' });
+  }
 
   res.status(200).json({
     success: true,
-    data: user
+    data: {
+      ...user,
+      id: String(user._id),
+      employeeCode: user.employeeId || ''
+    }
   });
 });
 

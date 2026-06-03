@@ -9,6 +9,7 @@ import * as L from 'leaflet';
 import { RouterModule } from '@angular/router';
 import { environment } from '../../environments/environment';
 import { getBestPosition } from '../utils/geolocation';
+import { isCheckInOnTime } from '../utils/businessTime';
 
 @Component({
   selector: 'app-employee-home',
@@ -321,7 +322,13 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
           this.renderUserLocation();
         }
 
-        this.http.post(`${environment.apiUrl}/attendance/checkin/${this.user.id}`, payload).subscribe({
+        const userId = this.authService.getMongoUserId();
+        if (!userId) {
+          this.statusMessage = 'Session expired. Please log out and log in again.';
+          this.loading = false;
+          return;
+        }
+        this.http.post(`${environment.apiUrl}/attendance/checkin/${userId}`, payload).subscribe({
           next: (res: any) => {
             this.statusMessage = 'Checked in successfully!';
             this.loadAttendance();
@@ -341,7 +348,13 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
   checkOut() {
     this.loading = true;
-    this.http.put(`${environment.apiUrl}/attendance/checkout/${this.user.id}`, {}).subscribe({
+    const userId = this.authService.getMongoUserId();
+    if (!userId) {
+      this.statusMessage = 'Session expired. Please log out and log in again.';
+      this.loading = false;
+      return;
+    }
+    this.http.put(`${environment.apiUrl}/attendance/checkout/${userId}`, {}).subscribe({
       next: () => {
         this.statusMessage = 'Checked out successfully!';
         this.loadAttendance();
@@ -384,7 +397,9 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   loadAttendance() {
     if (!this.user) return;
 
-    this.http.get(`${environment.apiUrl}/attendance/${this.user.id}`).subscribe({
+    const userId = this.authService.getMongoUserId();
+    if (!userId) return;
+    this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
       next: (res: any) => {
         this.attendanceRecords = res.data;
         this.mapAttendanceToCalendar();
@@ -430,13 +445,10 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
         workDaysCount++;
       }
 
-      // On Time Arrival (Late Check-in > 10:00 AM)
+      // On Time Arrival (late after 9:45 AM Tue–Fri, 10:00 AM Sat–Sun)
       if (record.checkInTime) {
         const checkIn = new Date(record.checkInTime);
-        const threshold = new Date(checkIn);
-        threshold.setHours(10, 0, 0, 0); // 10:00 AM Policy
-
-        if (checkIn <= threshold) {
+        if (isCheckInOnTime(checkIn)) {
           onTimeCount++;
         }
 
