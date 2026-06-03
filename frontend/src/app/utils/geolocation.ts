@@ -3,6 +3,32 @@ export type BestPositionOptions = {
   desiredAccuracyMeters?: number;
 };
 
+export type GeolocationPermissionState = PermissionState | 'unknown';
+
+export const getGeolocationErrorMessage = (err: unknown): string => {
+  const code = Number((err as GeolocationPositionError)?.code);
+  if (code === 1) {
+    return 'Location is blocked for this site. Tap Allow Location below, or enable location for hrpropninja.com in your browser settings.';
+  }
+  if (code === 2) {
+    return 'GPS signal not found. Turn on device location, move near a window, then tap Allow Location again.';
+  }
+  if (code === 3) {
+    return 'Location request timed out. Tap Allow Location to try again.';
+  }
+  return 'Unable to get your location. Turn on device GPS and allow location for this site.';
+};
+
+export const queryLocationPermission = async (): Promise<GeolocationPermissionState> => {
+  if (!navigator.permissions?.query) return 'unknown';
+  try {
+    const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+    return result.state;
+  } catch {
+    return 'unknown';
+  }
+};
+
 export const getBestPosition = (options: BestPositionOptions = {}): Promise<GeolocationPosition> => {
   const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 9000;
   const desiredAccuracyMeters =

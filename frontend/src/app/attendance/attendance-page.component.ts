@@ -8,7 +8,7 @@ import { LocationsPageComponent } from '../locations/locations-page.component';
 import { ToastService } from '../services/toast.service';
 import { environment } from '../../environments/environment';
 import * as L from 'leaflet';
-import { getBestPosition } from '../utils/geolocation';
+import { getBestPosition, getGeolocationErrorMessage, queryLocationPermission } from '../utils/geolocation';
 import { getBusinessDateKey, isGeoAttendanceAllowedDay as isGeoAttendanceAllowedToday } from '../utils/businessTime';
 
 @Component({
@@ -37,6 +37,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   lastGpsFixAt: Date | null = null;
   lastGpsAccuracyMeters: number | null = null;
   gpsLowAccuracy = false;
+  gpsReady = false;
+  showLocationPrompt = false;
+  locationPromptMessage = 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
   // Offsite modal
   showOffsite = false;
   // Map instance (Leaflet)
@@ -55,6 +58,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   private readonly onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       this.loadGeoPolicy();
+      if (!this.gpsReady) {
+        this.showLocationPrompt = true;
+      }
     }
   };
 
@@ -72,13 +78,21 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   get checkInDisabled(): boolean {
-    return this.loading || !!this.todayRecord || !this.withinRadius || this.gpsLowAccuracy || !this.isGeoAttendanceAllowedDay;
+    return (
+      this.loading ||
+      !!this.todayRecord ||
+      !this.gpsReady ||
+      !this.withinRadius ||
+      this.gpsLowAccuracy ||
+      !this.isGeoAttendanceAllowedDay
+    );
   }
 
   get checkInLabel(): string {
     if (!this.isGeoAttendanceAllowedDay) return 'Available Tue-Sun Only';
     if (this.todayRecord) return 'Checked In';
     if (this.loading) return 'Processing...';
+    if (!this.gpsReady) return 'Allow Location First';
     if (!this.withinRadius || this.gpsLowAccuracy) return 'Out of Range';
     return 'Check In (Selfie)';
   }
@@ -172,6 +186,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.loadAttendance();
       this.loadActiveLocations();
       this.loadGeoPolicy();
+      this.showLocationPrompt = true;
       document.addEventListener('visibilitychange', this.onVisibilityChange);
     }
   }
@@ -225,9 +240,31 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.http.get(`${environment.apiUrl}/locations/active`).subscribe({
       next: (res: any) => {
         this.locations = res.data || [];
-        setTimeout(() => this.initMap(), 0);
+        setTimeout(() => {
+          this.initMap();
+          this.bootstrapLocationAccess();
+        }, 0);
       }
     });
+  }
+
+  private async bootstrapLocationAccess() {
+    const permission = await queryLocationPermission();
+    if (permission === 'granted') {
+      this.refreshGps(false);
+      return;
+    }
+    this.showLocationPrompt = true;
+    if (permission === 'denied') {
+      this.locationPromptMessage =
+        'Location is blocked for this website. Open browser site settings for hrpropninja.com, set Location to Allow, then tap the button below.';
+    }
+  }
+
+  allowLocationAccess() {
+    this.showLocationPrompt = true;
+    this.locationPromptMessage = 'Requesting GPS… Allow location when your browser asks.';
+    this.refreshGps(true);
   }
 
   initMap() {
@@ -243,13 +280,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       L.marker([loc.latitude, loc.longitude], { icon: officeIcon }).addTo(this.map).bindPopup(`${loc.name} (${loc.radius || 20}m)`);
       L.circle([loc.latitude, loc.longitude], { radius: loc.radius || 20, color: '#10b981', fillColor: '#10b981', fillOpacity: 0.1 }).addTo(this.map);
     }
-    // Render user marker
-    this.renderUserLocation();
   }
 
-  renderUserLocation() {
-    if (!navigator.geolocation) return;
-    this.refreshGps(false);
+  get gpsStatusLabel(): string {
+    if (this.gpsRefreshing) return 'Locating…';
+    if (!this.gpsReady) return 'Location needed';
+    if (this.gpsLowAccuracy) return 'Low Accuracy';
+    return this.withinRadius ? 'OK' : 'Out of Range';
   }
 
   refreshGps(showToast: boolean = true) {
@@ -292,16 +329,29 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           this.map.invalidateSize();
         } catch {}
 
+        this.gpsReady = true;
+        this.showLocationPrompt = false;
         this.gpsRefreshing = false;
+        const blockedDayMsg =
+          this.statusMessage.includes('Location is blocked') ||
+          this.statusMessage.includes('Unable to get your location') ||
+          this.statusMessage.includes('GPS signal');
+        if (blockedDayMsg) this.statusMessage = '';
         if (this.gpsLowAccuracy) {
-          this.statusMessage = 'GPS accuracy is low on desktop. Turn on Windows Location Services and disable VPN, then Refresh GPS.';
+          this.statusMessage =
+            'GPS accuracy is low. Move closer to a window, disable VPN, then tap Refresh GPS.';
         } else if (showToast) {
-          this.toast.success('GPS refreshed');
+          this.toast.success('Location enabled');
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        this.gpsReady = false;
+        this.showLocationPrompt = true;
         this.gpsRefreshing = false;
-        if (showToast) this.toast.error('Unable to refresh GPS. Please enable Location.');
+        const msg = getGeolocationErrorMessage(err);
+        this.locationPromptMessage = msg;
+        this.statusMessage = msg;
+        if (showToast) this.toast.error(msg);
       });
   }
 
@@ -372,6 +422,11 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     }
     if (this.todayRecord) {
       this.setStatus('You have already checked in today.');
+      return;
+    }
+    if (!this.gpsReady) {
+      this.showLocationPrompt = true;
+      this.setStatus('Allow location first to check in.');
       return;
     }
     if (this.gpsLowAccuracy) {

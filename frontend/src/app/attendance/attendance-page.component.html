@@ -1,5 +1,21 @@
 <div class="max-w-md mx-auto" *ngIf="!isAdmin">
 
+  <div *ngIf="showLocationPrompt" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+      <h3 class="text-lg font-bold text-[#0F172A] mb-2">Turn on location</h3>
+      <p class="text-sm text-gray-600 mb-4">
+        {{ locationPromptMessage }}
+      </p>
+      <p class="text-xs text-gray-500 mb-4">
+        Device location can be ON, but this website also needs permission. Tap below and choose <strong>Allow</strong> when the browser asks.
+      </p>
+      <button type="button" (click)="allowLocationAccess()" [disabled]="gpsRefreshing"
+        class="w-full rounded-xl bg-[#16A34A] px-4 py-3 font-bold text-white hover:bg-[#15803d] disabled:opacity-50">
+        {{ gpsRefreshing ? 'Getting location…' : 'Allow Location' }}
+      </button>
+    </div>
+  </div>
+
   <div *ngIf="showCameraCapture" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
     <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
       <div class="mb-3 flex items-center justify-between">
@@ -28,7 +44,7 @@
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-[#0F172A]">Work Attendance</h2>
       <div class="flex items-center gap-3">
-        <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ gpsLowAccuracy ? 'Low Accuracy' : (withinRadius ? 'OK' : 'Out of Range') }}</span></div>
+        <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ gpsStatusLabel }}</span></div>
         <button type="button" (click)="refreshGps()" [disabled]="gpsRefreshing"
           class="text-xs px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
           {{ gpsRefreshing ? 'Refreshing...' : 'Refresh GPS' }}
@@ -93,7 +109,7 @@
       </button>
 
       <button (click)="checkOut()"
-        [disabled]="loading || !todayRecord || !withinRadius || gpsLowAccuracy || !isGeoAttendanceAllowedDay"
+        [disabled]="loading || !todayRecord || !gpsReady || !withinRadius || gpsLowAccuracy || !isGeoAttendanceAllowedDay"
         class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50"
         [ngClass]="!todayRecord ? 'opacity-50 cursor-not-allowed' : ''">
         {{ !isGeoAttendanceAllowedDay ? 'Available Tue-Sun Only' : (todayRecord?.checkOutTime ? 'Update Check Out' : 'Check Out') }}
