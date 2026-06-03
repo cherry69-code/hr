@@ -1,4 +1,5 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -148,23 +149,30 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.stopCameraStream();
   }
 
-  loadGeoPolicy() {
-    this.http.get(`${environment.apiUrl}/attendance/geo-policy/today`).subscribe({
-      next: (res: any) => {
+  loadGeoPolicy(): Promise<boolean> {
+    return firstValueFrom(this.http.get(`${environment.apiUrl}/attendance/geo-policy/today`))
+      .then((res: any) => {
         const data = res?.data || {};
         this.geoPolicyAllowed = Boolean(data.allowed);
         this.geoPolicyMessage = String(data.message || '');
         if (this.geoPolicyAllowed) {
-          const blockedDayMsg = this.statusMessage.includes('Tuesday to Sunday') || this.statusMessage.includes('weekly off');
+          const blockedDayMsg =
+            this.statusMessage.includes('Tuesday to Sunday') ||
+            this.statusMessage.includes('weekly off') ||
+            this.statusMessage.includes('Geo attendance is allowed');
           if (blockedDayMsg) this.statusMessage = '';
         } else {
           this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
         }
-      },
-      error: () => {
+        return this.geoPolicyAllowed;
+      })
+      .catch(() => {
         this.geoPolicyAllowed = isGeoAttendanceAllowedToday(new Date());
-      }
-    });
+        this.geoPolicyMessage = this.geoPolicyAllowed
+          ? 'Geo punch is open today (IST). Allowed days: Tuesday to Sunday.'
+          : 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+        return this.geoPolicyAllowed;
+      });
   }
 
   loadAttendance() {
@@ -302,8 +310,12 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.openCameraCapture('field', fileInput);
   }
 
-  onPickOfficeSelfie(fileInput: HTMLInputElement) {
-    this.loadGeoPolicy();
+  async onPickOfficeSelfie(fileInput: HTMLInputElement) {
+    const allowed = await this.loadGeoPolicy();
+    if (!allowed) {
+      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+      return;
+    }
     this.pendingOfficeAction = 'CHECK_IN';
     this.openCameraCapture('office', fileInput);
   }
@@ -467,9 +479,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     const action = this.pendingOfficeAction;
     this.pendingOfficeAction = null;
     if (!file || !action) return;
-    this.loadGeoPolicy();
-    if (!this.isGeoAttendanceAllowedDay) {
-      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
+    const allowed = await this.loadGeoPolicy();
+    if (!allowed) {
+      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
       return;
     }
     if (this.todayRecord) {
@@ -610,10 +622,10 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.statusMessage = 'Please take a selfie to check in.';
   }
 
-  checkOut() {
-    this.loadGeoPolicy();
-    if (!this.isGeoAttendanceAllowedDay) {
-      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo attendance is allowed from Tuesday to Sunday.';
+  async checkOut() {
+    const allowed = await this.loadGeoPolicy();
+    if (!allowed) {
+      this.statusMessage = this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
       return;
     }
     this.loading = true;
