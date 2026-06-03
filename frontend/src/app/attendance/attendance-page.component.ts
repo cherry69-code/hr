@@ -71,14 +71,27 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return isGeoAttendanceAllowedToday(new Date());
   }
 
+  get checkInDisabled(): boolean {
+    return this.loading || !!this.todayRecord || !this.withinRadius || this.gpsLowAccuracy || !this.isGeoAttendanceAllowedDay;
+  }
+
+  get checkInLabel(): string {
+    if (!this.isGeoAttendanceAllowedDay) return 'Available Tue-Sun Only';
+    if (this.todayRecord) return 'Checked In';
+    if (this.loading) return 'Processing...';
+    if (!this.withinRadius || this.gpsLowAccuracy) return 'Out of Range';
+    return 'Check In (Selfie)';
+  }
+
+  get checkInButtonClass(): string {
+    if (this.todayRecord) return 'bg-gray-400 text-white';
+    if (this.withinRadius && !this.gpsLowAccuracy) return 'bg-[#16A34A] text-white hover:bg-[#15803d]';
+    return 'bg-yellow-500 text-black hover:bg-yellow-600';
+  }
+
   private get employeeMongoId(): string {
     const user = this.authService.currentUserValue || {};
     return String(user.id || user._id || user.uid || '');
-  }
-
-  private isMobileDevice(): boolean {
-    if (typeof navigator === 'undefined') return false;
-    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   }
 
   private setStatus(message: string, isSuccess = false) {
@@ -333,7 +346,22 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.openCameraCapture('field', fileInput);
   }
 
-  onPickOfficeSelfie(fileInput: HTMLInputElement) {
+  onOfficeSelfiePickStart(event: Event) {
+    if (this.checkInDisabled) {
+      event.preventDefault();
+      this.explainCheckInBlocked();
+      return;
+    }
+    if (!this.employeeMongoId) {
+      event.preventDefault();
+      this.setStatus('Session expired. Please log out and log in again.');
+      return;
+    }
+    this.pendingOfficeAction = 'CHECK_IN';
+    this.loadGeoPolicy().catch(() => {});
+  }
+
+  explainCheckInBlocked() {
     if (!this.employeeMongoId) {
       this.setStatus('Session expired. Please log out and log in again.');
       return;
@@ -346,20 +374,19 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.setStatus('You have already checked in today.');
       return;
     }
-
-    // Refresh policy in background; do not block the tap gesture (mobile selfie picker).
-    this.loadGeoPolicy().catch(() => {});
-
-    this.pendingOfficeAction = 'CHECK_IN';
-    this.openOfficeSelfieCapture(fileInput);
-  }
-
-  private openOfficeSelfieCapture(fileInput: HTMLInputElement) {
-    if (this.isMobileDevice()) {
-      this.triggerSelfieFileInput(fileInput);
+    if (this.gpsLowAccuracy) {
+      this.setStatus('GPS accuracy is low. Tap Refresh GPS, then try again.');
       return;
     }
-    this.openCameraCapture('office', fileInput);
+    if (!this.withinRadius) {
+      this.setStatus(
+        `You are ${this.nearestDistanceMeters ?? '-'}m from ${this.nearestLocationName || 'the office'}. Move closer to check in.`
+      );
+      return;
+    }
+    if (this.loading) {
+      this.toast.info('Check-in is already in progress.');
+    }
   }
 
   private triggerSelfieFileInput(fileInput: HTMLInputElement) {
@@ -505,13 +532,16 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   async onOfficeSelfieSelected(evt: Event) {
     const input = evt.target as HTMLInputElement;
     const file = input.files && input.files[0] ? input.files[0] : null;
+    if (!this.pendingOfficeAction) {
+      this.pendingOfficeAction = 'CHECK_IN';
+    }
     const action = this.pendingOfficeAction;
     this.pendingOfficeAction = null;
     input.value = '';
 
     if (!file) {
       if (action) {
-        this.setStatus('Selfie not captured. Tap Check In again and take a photo.');
+        this.setStatus('Selfie cancelled. Tap Check In (Selfie) again to open the camera.');
       }
       return;
     }

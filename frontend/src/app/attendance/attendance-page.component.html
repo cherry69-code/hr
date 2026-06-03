@@ -68,15 +68,28 @@
     </div>
 
     <input #fieldSelfieInput type="file" accept="image/*" capture="user" class="hidden" (change)="onFieldSelfieSelected($event)" />
-    <input #officeSelfieInput type="file" accept="image/*" capture="user" class="hidden" (change)="onOfficeSelfieSelected($event)" />
 
     <!-- Sticky button area -->
     <div class="sticky bottom-4 flex flex-col gap-3" *ngIf="!isFieldMode">
-      <button (click)="onPickOfficeSelfie(officeSelfieInput)"
-        [disabled]="loading || todayRecord || !withinRadius || gpsLowAccuracy || !isGeoAttendanceAllowedDay"
-        class="w-full py-3 rounded-xl font-bold transition disabled:opacity-50"
-        [ngClass]="todayRecord ? 'bg-gray-400 text-white cursor-not-allowed' : (withinRadius ? 'bg-[#16A34A] text-white hover:bg-[#15803d]' : 'bg-yellow-500 text-black hover:bg-yellow-600')">
-        {{ !isGeoAttendanceAllowedDay ? 'Available Tue-Sun Only' : (todayRecord ? 'Checked In' : ((withinRadius && !gpsLowAccuracy) ? (loading ? 'Processing...' : 'Check In (Selfie)') : 'Out of Range')) }}
+      <!-- Native label+file input: only reliable way to open phone camera on mobile browsers -->
+      <label *ngIf="!checkInDisabled"
+        class="relative flex w-full cursor-pointer items-center justify-center rounded-xl py-3 font-bold transition"
+        [ngClass]="checkInButtonClass">
+        <input
+          type="file"
+          accept="image/*"
+          capture="user"
+          class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          (click)="onOfficeSelfiePickStart($event)"
+          (change)="onOfficeSelfieSelected($event)"
+        />
+        {{ checkInLabel }}
+      </label>
+      <button *ngIf="checkInDisabled" type="button" disabled
+        class="w-full cursor-not-allowed rounded-xl py-3 font-bold opacity-50"
+        [ngClass]="checkInButtonClass"
+        (click)="explainCheckInBlocked()">
+        {{ checkInLabel }}
       </button>
 
       <button (click)="checkOut()"
