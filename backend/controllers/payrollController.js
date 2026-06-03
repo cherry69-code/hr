@@ -11,6 +11,7 @@ const cloudinary = require('../config/cloudinary');
 const { calculatePayroll } = require('../services/payroll.service');
 const AuditLog = require('../models/AuditLog');
 const IncentiveCalculation = require('../models/IncentiveCalculation');
+const { getCompanyLogoBuffer } = require('../utils/branding');
 const { getBusinessParts } = require('../utils/businessTime');
 
 const monthRange = (month, year) => {
@@ -237,7 +238,23 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
   const writeStream = fs.createWriteStream(filePath);
   doc.pipe(writeStream);
 
-  doc.fontSize(20).text('PropNinja HR', { align: 'center' });
+  const logoBuffer = await getCompanyLogoBuffer();
+  const headerY = 40;
+  if (logoBuffer) {
+    try {
+      const logoWidth = 180;
+      const logoX = (doc.page.width - logoWidth) / 2;
+      doc.image(logoBuffer, logoX, headerY, { width: logoWidth });
+      doc.y = headerY + 58;
+    } catch {
+      doc.fontSize(20).text('PropNinja HR', { align: 'center' });
+      doc.moveDown(0.5);
+    }
+  } else {
+    doc.fontSize(20).text('PropNinja HR', { align: 'center' });
+    doc.moveDown(0.5);
+  }
+
   doc.fontSize(12).text(`Payslip for ${monthName} ${y}`, { align: 'center' });
   doc.moveDown();
 

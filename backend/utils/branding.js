@@ -87,12 +87,10 @@ const getCompanyLogoBuffer = async () => {
     candidatePaths.push(process.env.COMPANY_LOGO_PATH);
   }
 
-  // Priority: Prop Ninja_Logo.jpg in frontend assets
-  candidatePaths.push(path.join(__dirname, '../../frontend/src/assets/Prop Ninja_Logo.jpg'));
-  
-  // Fallbacks
+  // Bundled logo for server deployments
   candidatePaths.push(path.join(__dirname, '..', 'assets', 'propninja-logo.png'));
   candidatePaths.push(path.join(__dirname, '..', 'assets', 'propninja-logo.jpg'));
+  candidatePaths.push(path.join(__dirname, '../../frontend/src/assets/Prop Ninja_Logo.jpg'));
   candidatePaths.push(path.join(__dirname, '..', 'assets', 'logo.png'));
   candidatePaths.push(path.join(__dirname, '..', 'assets', 'logo.jpg'));
 
