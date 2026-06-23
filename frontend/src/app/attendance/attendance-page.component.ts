@@ -1,5 +1,5 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
+import { firstValueFrom, timeout } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -8,7 +8,15 @@ import { LocationsPageComponent } from '../locations/locations-page.component';
 import { ToastService } from '../services/toast.service';
 import { environment } from '../../environments/environment';
 import * as L from 'leaflet';
-import { getBestPosition, getGeolocationErrorMessage, queryLocationPermission } from '../utils/geolocation';
+import {
+  GeolocationPermissionState,
+  getBestPosition,
+  getGeolocationErrorMessage,
+  getLocationDeniedInstructions,
+  isGeolocationPermissionDenied,
+  queryLocationPermission,
+  watchLocationPermission
+} from '../utils/geolocation';
 import { getBusinessDateKey, isGeoAttendanceAllowedDay as isGeoAttendanceAllowedToday } from '../utils/businessTime';
 
 @Component({
@@ -21,6 +29,8 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private authService = inject(AuthService);
   private toast = inject(ToastService);
+  private cdr = inject(ChangeDetectorRef);
+  private zone = inject(NgZone);
   @ViewChild('cameraVideo') cameraVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('captureCanvas') captureCanvas?: ElementRef<HTMLCanvasElement>;
 
@@ -39,7 +49,11 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   gpsLowAccuracy = false;
   gpsReady = false;
   showLocationPrompt = false;
+  locationPermission: GeolocationPermissionState = 'unknown';
   locationPromptMessage = 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
+  private locationPromptDismissed = false;
+  private lastGpsErrorMessage = '';
+  private stopWatchingLocationPermission: (() => void) | null = null;
   private lastKnownPosition: { lat: number; lng: number; accuracy: number | null; at: number } | null = null;
   private readonly maxCheckInAccuracyMeters = 100;
   private readonly gpsCacheMaxAgeMs = 5 * 60 * 1000;
@@ -51,6 +65,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   fieldLocationAddress = '';
   pendingFieldAction: 'CHECK_IN' | 'CHECK_OUT' | null = null;
   pendingOfficeAction: 'CHECK_IN' | null = null;
+  private officeSelfieProcessing = false;
   showCameraCapture = false;
   cameraBusy = false;
   cameraError = '';
@@ -59,12 +74,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   geoPolicyAllowed: boolean | null = null;
   geoPolicyMessage = '';
   private readonly onVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      this.loadGeoPolicy();
-      if (!this.gpsReady) {
-        this.showLocationPrompt = true;
+    if (document.visibilityState !== 'visible') return;
+    this.loadGeoPolicy();
+    void this.syncLocationPermission().then((permission) => {
+      if (permission === 'granted' && !this.gpsReady && !this.gpsRefreshing) {
+        this.refreshGps(false);
       }
-    }
+    });
   };
 
   get isAdmin() {
@@ -115,12 +131,109 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return this.authService.getMongoUserId();
   }
 
+  /** Mongo id preferred; employee code (e.g. NINJA0020) works on backend too. */
+  private get checkInUserParam(): string {
+    return this.authService.getMongoUserId() || this.authService.getEmployeeCode();
+  }
+
+  private markUiChanged() {
+    try {
+      this.cdr.detectChanges();
+    } catch {}
+  }
+
+  private withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+    ]);
+  }
+
   private setStatus(message: string, isSuccess = false) {
     this.statusMessage = message;
     if (isSuccess) {
       this.toast.success(message);
     } else {
       this.toast.error(message);
+    }
+  }
+
+  private setInlineStatus(message: string) {
+    this.statusMessage = message;
+  }
+
+  private get siteHostname(): string {
+    if (typeof window === 'undefined') return 'this site';
+    return window.location.hostname || 'this site';
+  }
+
+  private async syncLocationPermission(): Promise<GeolocationPermissionState> {
+    this.locationPermission = await queryLocationPermission();
+    return this.locationPermission;
+  }
+
+  private startWatchingLocationPermission() {
+    if (this.stopWatchingLocationPermission) return;
+    this.stopWatchingLocationPermission = watchLocationPermission((state) => {
+      this.locationPermission = state;
+      if (state === 'granted') {
+        this.locationPromptDismissed = false;
+        this.lastGpsErrorMessage = '';
+        if (!this.gpsRefreshing) {
+          this.refreshGps(false);
+        }
+        return;
+      }
+      if (state === 'denied') {
+        this.gpsReady = false;
+        this.applyLocationDeniedState(false);
+      }
+    });
+  }
+
+  private applyLocationDeniedState(userInitiated: boolean) {
+    this.locationPromptMessage = getLocationDeniedInstructions(this.siteHostname);
+    this.statusMessage = '';
+    if (!this.locationPromptDismissed || userInitiated) {
+      this.showLocationPrompt = true;
+      this.locationPromptDismissed = false;
+    }
+  }
+
+  private handleGpsFailure(err: unknown, userInitiated: boolean) {
+    this.gpsReady = false;
+    this.gpsRefreshing = false;
+    const msg = getGeolocationErrorMessage(err, this.siteHostname);
+    const denied = isGeolocationPermissionDenied(err) || this.locationPermission === 'denied';
+    const shouldToast = userInitiated && !denied && msg !== this.lastGpsErrorMessage;
+    this.lastGpsErrorMessage = msg;
+
+    if (denied) {
+      this.locationPermission = 'denied';
+      this.applyLocationDeniedState(userInitiated);
+      return;
+    }
+
+    this.locationPromptMessage = msg;
+    this.statusMessage = '';
+    if (!this.locationPromptDismissed || userInitiated) {
+      this.showLocationPrompt = true;
+      this.locationPromptDismissed = false;
+    }
+    if (shouldToast) {
+      this.toast.error(msg);
+    }
+  }
+
+  dismissLocationPrompt() {
+    this.locationPromptDismissed = true;
+    this.showLocationPrompt = false;
+    if (
+      this.statusMessage.includes('Location is blocked') ||
+      this.statusMessage.includes('Unable to get your location') ||
+      this.statusMessage.includes('GPS signal')
+    ) {
+      this.statusMessage = '';
     }
   }
 
@@ -244,23 +357,20 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   private initEmployeeAttendance() {
-    if (!this.employeeMongoId) {
-      const code = this.authService.getEmployeeCode();
-      this.setStatus(
-        code
-          ? `Session error for ${code}. Please log out and log in again with your employee code or email.`
-          : 'Session error. Please log out and log in again.'
-      );
+    if (!this.checkInUserParam) {
+      this.setStatus('Session error. Please log out and log in again with your employee code or email.');
       return;
     }
     this.loadAttendance();
     this.loadActiveLocations();
     this.loadGeoPolicy();
-    this.showLocationPrompt = true;
+    this.startWatchingLocationPermission();
   }
 
   ngOnDestroy() {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.stopWatchingLocationPermission?.();
+    this.stopWatchingLocationPermission = null;
     this.stopCameraStream();
   }
 
@@ -291,13 +401,16 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   loadAttendance() {
-    const userId = this.employeeMongoId;
+    const userId = this.checkInUserParam;
     if (!userId) {
       this.setStatus('Session expired. Please log out and log in again.');
       return;
     }
     this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
-      next: (res: any) => this.attendanceRecords = res.data,
+      next: (res: any) => {
+        this.attendanceRecords = res.data || [];
+        this.markUiChanged();
+      },
       error: (err) => {
         this.toast.error(err.error?.error || 'Failed to load attendance');
       }
@@ -317,19 +430,32 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   private async bootstrapLocationAccess() {
-    const permission = await queryLocationPermission();
+    const permission = await this.syncLocationPermission();
     if (permission === 'granted') {
       this.refreshGps(false);
       return;
     }
-    this.showLocationPrompt = true;
     if (permission === 'denied') {
-      this.locationPromptMessage =
-        'Location is blocked for this website. Open browser site settings for hrpropninja.com, set Location to Allow, then tap the button below.';
+      this.applyLocationDeniedState(false);
+      return;
+    }
+    if (!this.locationPromptDismissed) {
+      this.showLocationPrompt = true;
+      this.locationPromptMessage = 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
     }
   }
 
   allowLocationAccess() {
+    void this.requestLocationAccess();
+  }
+
+  private async requestLocationAccess() {
+    this.locationPromptDismissed = false;
+    const permission = await this.syncLocationPermission();
+    if (permission === 'denied') {
+      this.applyLocationDeniedState(true);
+      return;
+    }
     this.showLocationPrompt = true;
     this.locationPromptMessage = 'Requesting GPS… Allow location when your browser asks.';
     this.refreshGps(true);
@@ -357,11 +483,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return this.withinRadius ? 'OK' : 'Out of Range';
   }
 
-  refreshGps(showToast: boolean = true) {
+  refreshGps(userInitiated: boolean = false) {
     if (!navigator.geolocation) {
-      if (showToast) this.toast.error('Geolocation is not supported by your browser');
+      if (userInitiated) this.toast.error('Geolocation is not supported by your browser');
       return;
     }
+
+    if (this.gpsRefreshing) return;
 
     if (!this.map) {
       this.initMap();
@@ -399,7 +527,10 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
         } catch {}
 
         this.gpsReady = true;
+        this.locationPermission = 'granted';
         this.showLocationPrompt = false;
+        this.locationPromptDismissed = false;
+        this.lastGpsErrorMessage = '';
         this.gpsRefreshing = false;
         const blockedDayMsg =
           this.statusMessage.includes('Location is blocked') ||
@@ -407,20 +538,15 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           this.statusMessage.includes('GPS signal');
         if (blockedDayMsg) this.statusMessage = '';
         if (this.gpsLowAccuracy) {
-          this.statusMessage =
-            'GPS accuracy is low. Move closer to a window, disable VPN, then tap Refresh GPS.';
-        } else if (showToast) {
+          this.setInlineStatus(
+            'GPS accuracy is low. Move closer to a window, disable VPN, then tap Refresh GPS.'
+          );
+        } else if (userInitiated) {
           this.toast.success('Location enabled');
         }
       })
       .catch((err) => {
-        this.gpsReady = false;
-        this.showLocationPrompt = true;
-        this.gpsRefreshing = false;
-        const msg = getGeolocationErrorMessage(err);
-        this.locationPromptMessage = msg;
-        this.statusMessage = msg;
-        if (showToast) this.toast.error(msg);
+        this.handleGpsFailure(err, userInitiated);
       });
   }
 
@@ -471,18 +597,19 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.explainCheckInBlocked();
       return;
     }
-    if (!this.employeeMongoId) {
+    if (!this.checkInUserParam) {
       event.preventDefault();
-      this.setStatus('Session expired. Please log out and log in again.');
+      this.setStatus('Session expired. Please log out and log in again with your employee code.');
       return;
     }
     this.pendingOfficeAction = 'CHECK_IN';
+    this.statusMessage = '';
     this.loadGeoPolicy().catch(() => {});
   }
 
   explainCheckInBlocked() {
-    if (!this.employeeMongoId) {
-      this.setStatus('Session expired. Please log out and log in again.');
+    if (!this.checkInUserParam) {
+      this.setStatus('Session expired. Please log out and log in again with your employee code.');
       return;
     }
     if (!this.isGeoAttendanceAllowedDay) {
@@ -494,8 +621,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       return;
     }
     if (!this.gpsReady) {
-      this.showLocationPrompt = true;
-      this.setStatus('Allow location first to check in.');
+      this.locationPromptDismissed = false;
+      if (this.locationPermission === 'denied') {
+        this.applyLocationDeniedState(true);
+      } else {
+        this.showLocationPrompt = true;
+        this.locationPromptMessage = 'Allow location first to check in.';
+      }
       return;
     }
     if (this.gpsLowAccuracy) {
@@ -653,22 +785,28 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     await this.handleFieldSelfieFile(file);
   }
 
-  async onOfficeSelfieSelected(evt: Event) {
+  onOfficeSelfieSelected(evt: Event) {
+    if (this.officeSelfieProcessing || this.loading) return;
     const input = evt.target as HTMLInputElement;
     const file = input.files && input.files[0] ? input.files[0] : null;
-    this.pendingOfficeAction = null;
     input.value = '';
+    if (!file) return;
 
-    if (!file) {
-      this.setStatus('Selfie cancelled. Tap Check In (Selfie) again to open the camera.');
-      return;
-    }
+    this.officeSelfieProcessing = true;
+    this.zone.run(() => {
+      void this.processOfficeSelfieFile(file).finally(() => {
+        this.officeSelfieProcessing = false;
+      });
+    });
+  }
 
+  private async processOfficeSelfieFile(file: File) {
     try {
       await this.handleOfficeSelfieFile(file, 'CHECK_IN');
     } catch (err: any) {
       this.loading = false;
       this.setStatus(err?.message || 'Check-in failed. Please try again.');
+      this.markUiChanged();
     }
   }
 
@@ -692,8 +830,8 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       return;
     }
     if (action !== 'CHECK_IN') return;
-    const allowed = await this.loadGeoPolicy();
-    if (!allowed) {
+
+    if (!this.isGeoAttendanceAllowedDay) {
       this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
       return;
     }
@@ -702,20 +840,38 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const employeeId = this.employeeMongoId;
-    if (!employeeId) {
-      this.setStatus('Session expired. Please log out and log in again.');
-      return;
-    }
-
-    const photoBase64 = await this.ensureJpegDataUrl(file);
-    if (!photoBase64) {
-      this.setStatus('Selfie capture failed. Please retake the photo.');
+    const employeeParam = this.checkInUserParam;
+    if (!employeeParam) {
+      this.setStatus('Session expired. Please log out and log in again with your employee code.');
       return;
     }
 
     this.loading = true;
+    this.statusMessage = 'Processing selfie...';
+    this.markUiChanged();
+
+    let photoBase64 = '';
+    try {
+      photoBase64 = await this.withTimeout(
+        this.ensureJpegDataUrl(file),
+        45000,
+        'Selfie processing took too long. Please retake with a smaller photo.'
+      );
+    } catch (err: any) {
+      this.loading = false;
+      this.setStatus(err?.message || 'Selfie capture failed. Please retake the photo.');
+      this.markUiChanged();
+      return;
+    }
+    if (!photoBase64) {
+      this.loading = false;
+      this.setStatus('Selfie capture failed. Please retake the photo.');
+      this.markUiChanged();
+      return;
+    }
+
     this.statusMessage = 'Submitting check-in...';
+    this.markUiChanged();
 
     const faceOk = this.isMobileDevice()
       ? true
@@ -723,45 +879,68 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (!faceOk) {
       this.loading = false;
       this.setStatus('Face not detected. Please take a clearer selfie and try again.');
+      this.markUiChanged();
       return;
     }
 
     try {
-      const { latitude, longitude, accuracy } = await this.getCheckInCoordinates();
+      const { latitude, longitude, accuracy } = await this.withTimeout(
+        this.getCheckInCoordinates(),
+        20000,
+        'Could not read GPS for check-in. Tap Refresh GPS and try again.'
+      );
 
       if (!this.withinRadius) {
         this.loading = false;
         this.setStatus(
           `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`
         );
+        this.markUiChanged();
         return;
       }
 
       if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
         this.loading = false;
         this.setStatus(`GPS accuracy is ${accuracy}m. Move closer to the office or tap Refresh GPS, then try again.`);
+        this.markUiChanged();
         return;
       }
 
       await firstValueFrom(
-        this.http.post(`${environment.apiUrl}/attendance/checkin/${employeeId}`, {
-          latitude,
-          longitude,
-          gpsAccuracyMeters: accuracy,
-          photoBase64,
-          faceVerified: faceOk
-        })
+        this.http
+          .post(`${environment.apiUrl}/attendance/checkin/${employeeParam}`, {
+            latitude,
+            longitude,
+            gpsAccuracyMeters: accuracy,
+            photoBase64,
+            faceVerified: faceOk
+          })
+          .pipe(timeout(90000))
       );
 
       this.loading = false;
       this.statusMessage = 'Checked in successfully!';
       this.toast.success('Checked in successfully!');
+      await this.authService.refreshMe().toPromise().catch(() => {});
       this.loadAttendance();
+      this.markUiChanged();
     } catch (err: any) {
       this.loading = false;
+      if (isGeolocationPermissionDenied(err)) {
+        this.handleGpsFailure(err, true);
+        this.markUiChanged();
+        return;
+      }
       const apiMsg = err?.error?.error;
-      const geoMsg = getGeolocationErrorMessage(err);
-      this.setStatus(apiMsg || geoMsg || err?.message || 'Check-in failed. Please try again.');
+      const geoMsg = getGeolocationErrorMessage(err, this.siteHostname);
+      const timeoutMsg = String(err?.name || '').includes('Timeout') ? 'Check-in timed out. Please try again on better network.' : '';
+      const message = apiMsg || geoMsg || timeoutMsg || err?.message || 'Check-in failed. Please try again.';
+      if (geoMsg && !apiMsg) {
+        this.setInlineStatus(message);
+      } else {
+        this.setStatus(message);
+      }
+      this.markUiChanged();
     }
   }
 
@@ -835,7 +1014,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   async checkOut() {
-    const employeeId = this.employeeMongoId;
+    const employeeId = this.checkInUserParam;
     if (!employeeId) {
       this.setStatus('Session expired. Please log out and log in again.');
       return;
@@ -888,9 +1067,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           }
         });
       })
-      .catch(() => {
+      .catch((err) => {
         this.loading = false;
-        this.statusMessage = 'Location access denied. Please enable GPS.';
+        if (isGeolocationPermissionDenied(err)) {
+          this.handleGpsFailure(err, true);
+          return;
+        }
+        this.setInlineStatus(getGeolocationErrorMessage(err, this.siteHostname));
       });
   }
 

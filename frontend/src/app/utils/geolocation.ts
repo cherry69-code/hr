@@ -5,16 +5,27 @@ export type BestPositionOptions = {
 
 export type GeolocationPermissionState = PermissionState | 'unknown';
 
-export const getGeolocationErrorMessage = (err: unknown): string => {
+export const isGeolocationPermissionDenied = (err: unknown): boolean => {
   const code = Number((err as GeolocationPositionError)?.code);
-  if (code === 1) {
-    return 'Location is blocked for this site. Tap Allow Location below, or enable location for hrpropninja.com in your browser settings.';
+  if (code === 1) return true;
+  const message = String((err as Error)?.message || '').toLowerCase();
+  return message.includes('denied') || message.includes('permission');
+};
+
+export const getLocationDeniedInstructions = (hostname: string = 'this site'): string => {
+  return `Location is blocked for ${hostname}. Tap the icon left of the address bar, open Site settings, set Location to Allow, then tap Try Again.`;
+};
+
+export const getGeolocationErrorMessage = (err: unknown, hostname: string = 'hrpropninja.com'): string => {
+  const code = Number((err as GeolocationPositionError)?.code);
+  if (code === 1 || isGeolocationPermissionDenied(err)) {
+    return getLocationDeniedInstructions(hostname);
   }
   if (code === 2) {
-    return 'GPS signal not found. Turn on device location, move near a window, then tap Allow Location again.';
+    return 'GPS signal not found. Turn on device location, move near a window, then tap Try Again.';
   }
   if (code === 3) {
-    return 'Location request timed out. Tap Allow Location to try again.';
+    return 'Location request timed out. Tap Try Again.';
   }
   return 'Unable to get your location. Turn on device GPS and allow location for this site.';
 };
@@ -27,6 +38,37 @@ export const queryLocationPermission = async (): Promise<GeolocationPermissionSt
   } catch {
     return 'unknown';
   }
+};
+
+export const watchLocationPermission = (
+  onChange: (state: GeolocationPermissionState) => void
+): (() => void) => {
+  if (!navigator.permissions?.query) return () => {};
+  let disposed = false;
+  let status: PermissionStatus | null = null;
+
+  const handler = () => {
+    if (!disposed && status) onChange(status.state);
+  };
+
+  navigator.permissions
+    .query({ name: 'geolocation' as PermissionName })
+    .then((result) => {
+      if (disposed) return;
+      status = result;
+      result.addEventListener('change', handler);
+      onChange(result.state);
+    })
+    .catch(() => {});
+
+  return () => {
+    disposed = true;
+    if (status) {
+      try {
+        status.removeEventListener('change', handler);
+      } catch {}
+    }
+  };
 };
 
 export const getBestPosition = (options: BestPositionOptions = {}): Promise<GeolocationPosition> => {

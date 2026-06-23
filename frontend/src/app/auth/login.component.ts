@@ -44,13 +44,27 @@ export class LoginComponent {
     }
 
     this.authService.login(payload).subscribe({
-      next: (res) => {
-        const role = this.authService.getRole();
-        if (role === 'employee') {
-          this.router.navigate(['/home']);
-        } else {
-          this.router.navigate(['/dashboard']);
-        }
+      next: () => {
+        this.authService.refreshMe().subscribe({
+          next: () => {
+            this.loading = false;
+            const role = this.authService.getRole();
+            if (role === 'employee') {
+              this.router.navigate(['/home']);
+            } else {
+              this.router.navigate(['/dashboard']);
+            }
+          },
+          error: () => {
+            this.loading = false;
+            const role = this.authService.getRole();
+            if (role === 'employee') {
+              this.router.navigate(['/home']);
+            } else {
+              this.router.navigate(['/dashboard']);
+            }
+          }
+        });
       },
       error: (err) => {
         this.error = err.error?.error || 'Login failed';

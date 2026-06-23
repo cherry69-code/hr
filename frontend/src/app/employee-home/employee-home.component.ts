@@ -6,7 +6,7 @@ import { DocumentService } from '../services/document.service';
 import { SignaturePadComponent } from '../shared/components/signature-pad/signature-pad.component';
 import { ToastService } from '../services/toast.service';
 import * as L from 'leaflet';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { environment } from '../../environments/environment';
 import { getBestPosition } from '../utils/geolocation';
 import { isCheckInOnTime } from '../utils/businessTime';
@@ -30,6 +30,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   public authService = inject(AuthService);
   private documentService = inject(DocumentService);
   private toast = inject(ToastService);
+  private router = inject(Router);
 
   user = this.authService.currentUserValue;
   currentDate = new Date();
@@ -118,6 +119,12 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   statusMessage = '';
 
   ngOnInit() {
+    this.authService.refreshMe().subscribe({
+      next: (res: any) => {
+        if (res?.data) this.user = res.data;
+      },
+      error: () => {}
+    });
     if (this.user) {
       // Check if remote is allowed today (Tue=2, Wed=3, Thu=4, Fri=5)
       // Monday (1) is Weekly Off
@@ -397,7 +404,7 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
   loadAttendance() {
     if (!this.user) return;
 
-    const userId = this.authService.getMongoUserId();
+    const userId = this.authService.getMongoUserId() || this.authService.getEmployeeCode();
     if (!userId) return;
     this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
       next: (res: any) => {
@@ -599,9 +606,13 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
   handlePunch() {
     if (this.isCheckedIn && !this.isCheckedOut) {
-      this.checkOut();
-    } else if (!this.isCheckedIn) {
-      this.markAttendance();
+      this.router.navigate(['/attendance']);
+      this.toast.info('Use Check Out on the Attendance page (GPS required).');
+      return;
+    }
+    if (!this.isCheckedIn) {
+      this.router.navigate(['/attendance']);
+      this.toast.info('Take a selfie on the Attendance page to check in.');
     }
   }
 
