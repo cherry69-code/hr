@@ -2,6 +2,7 @@ const express = require('express');
 const {
   getLocations,
   getActiveLocations,
+  getTodayOfficePins,
   createLocation,
   updateLocation,
   deleteLocation
@@ -13,6 +14,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/active', getActiveLocations);
+router.get('/pins/today', authorize('admin', 'hr'), getTodayOfficePins);
 router.get('/', authorize('admin', 'hr'), getLocations);
 router.post('/', authorize('admin', 'hr'), createLocation);
 router.put('/:id', authorize('admin', 'hr'), updateLocation);

@@ -62,7 +62,7 @@ const AttendanceSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['BIOMETRIC', 'MOBILE_GPS', 'MANUAL_ADMIN', 'OFFICE_FACE_WEB', 'FIELD_FACE_GPS', 'ADMIN_OVERRIDE'],
+    enum: ['BIOMETRIC', 'MOBILE_GPS', 'MANUAL_ADMIN', 'OFFICE_FACE_WEB', 'OFFICE_PIN_WEB', 'FIELD_FACE_GPS', 'ADMIN_OVERRIDE'],
     default: 'MOBILE_GPS'
   },
   deviceId: {

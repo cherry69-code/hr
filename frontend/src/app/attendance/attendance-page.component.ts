@@ -73,6 +73,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   private cameraStream: MediaStream | null = null;
   geoPolicyAllowed: boolean | null = null;
   geoPolicyMessage = '';
+  checkInMode: 'office_pin' | 'gps' = 'office_pin';
+  selectedLocationId = '';
+  officePin = '';
   private readonly onVisibilityChange = () => {
     if (document.visibilityState !== 'visible') return;
     this.loadGeoPolicy();
@@ -96,21 +99,41 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return isGeoAttendanceAllowedToday(new Date());
   }
 
+  get isPinMode() {
+    return this.checkInMode === 'office_pin';
+  }
+
+  get isGpsMode() {
+    return this.checkInMode === 'gps';
+  }
+
+  get pinReady() {
+    return !!this.selectedLocationId && String(this.officePin || '').trim().length >= 6;
+  }
+
   get checkInDisabled(): boolean {
-    return (
-      this.loading ||
-      !!this.todayRecord ||
-      !this.gpsReady ||
-      !this.withinRadius ||
-      this.gpsLowAccuracy ||
-      !this.isGeoAttendanceAllowedDay
-    );
+    if (this.loading || !!this.todayRecord || !this.isGeoAttendanceAllowedDay) return true;
+    if (this.isPinMode) return !this.pinReady;
+    return !this.gpsReady || !this.withinRadius || this.gpsLowAccuracy;
+  }
+
+  get checkOutDisabled(): boolean {
+    if (this.loading || !this.todayRecord || !this.isGeoAttendanceAllowedDay) return true;
+    if (this.isPinMode || this.todayRecord?.source === 'OFFICE_PIN_WEB') {
+      return !this.pinReady;
+    }
+    return !this.gpsReady || !this.withinRadius || this.gpsLowAccuracy;
   }
 
   get checkInLabel(): string {
     if (!this.isGeoAttendanceAllowedDay) return 'Available Tue-Sun Only';
     if (this.todayRecord) return 'Checked In';
     if (this.loading) return 'Processing...';
+    if (this.isPinMode) {
+      if (!this.selectedLocationId) return 'Select Office First';
+      if (String(this.officePin || '').trim().length < 6) return 'Enter Office PIN';
+      return 'Check In (Selfie)';
+    }
     if (!this.gpsReady) return 'Allow Location First';
     if (!this.withinRadius || this.gpsLowAccuracy) return 'Out of Range';
     return 'Check In (Selfie)';
@@ -118,6 +141,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
 
   get checkInButtonClass(): string {
     if (this.todayRecord) return 'bg-gray-400 text-white';
+    if (this.isPinMode && this.pinReady) return 'bg-[#16A34A] text-white hover:bg-[#15803d]';
     if (this.withinRadius && !this.gpsLowAccuracy) return 'bg-[#16A34A] text-white hover:bg-[#15803d]';
     return 'bg-yellow-500 text-black hover:bg-yellow-600';
   }
@@ -364,7 +388,20 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.loadAttendance();
     this.loadActiveLocations();
     this.loadGeoPolicy();
-    this.startWatchingLocationPermission();
+    if (this.checkInMode === 'gps') {
+      this.startWatchingLocationPermission();
+    }
+  }
+
+  setCheckInMode(mode: 'office_pin' | 'gps') {
+    this.checkInMode = mode;
+    this.showLocationPrompt = false;
+    this.locationPromptDismissed = true;
+    this.statusMessage = '';
+    if (mode === 'gps') {
+      this.startWatchingLocationPermission();
+      void this.bootstrapLocationAccess();
+    }
   }
 
   ngOnDestroy() {
@@ -409,6 +446,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.http.get(`${environment.apiUrl}/attendance/${userId}`).subscribe({
       next: (res: any) => {
         this.attendanceRecords = res.data || [];
+        const today = this.todayRecord;
+        if (today?.source === 'OFFICE_PIN_WEB') {
+          this.checkInMode = 'office_pin';
+          if (today.locationId) {
+            this.selectedLocationId = String(today.locationId);
+          }
+        }
         this.markUiChanged();
       },
       error: (err) => {
@@ -421,9 +465,14 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     this.http.get(`${environment.apiUrl}/locations/active`).subscribe({
       next: (res: any) => {
         this.locations = res.data || [];
+        if (this.locations.length === 1 && !this.selectedLocationId) {
+          this.selectedLocationId = String(this.locations[0]._id);
+        }
         setTimeout(() => {
           this.initMap();
-          this.bootstrapLocationAccess();
+          if (this.checkInMode === 'gps') {
+            this.bootstrapLocationAccess();
+          }
         }, 0);
       }
     });
@@ -597,6 +646,18 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.explainCheckInBlocked();
       return;
     }
+    if (this.isPinMode) {
+      if (!this.selectedLocationId) {
+        event.preventDefault();
+        this.setInlineStatus('Select your office location first.');
+        return;
+      }
+      if (String(this.officePin || '').trim().length < 6) {
+        event.preventDefault();
+        this.setInlineStatus('Enter the 6-digit office PIN displayed at your office.');
+        return;
+      }
+    }
     if (!this.checkInUserParam) {
       event.preventDefault();
       this.setStatus('Session expired. Please log out and log in again with your employee code.');
@@ -618,6 +679,17 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     }
     if (this.todayRecord) {
       this.setStatus('You have already checked in today.');
+      return;
+    }
+    if (this.isPinMode) {
+      if (!this.selectedLocationId) {
+        this.setInlineStatus('Select your office location first.');
+        return;
+      }
+      if (String(this.officePin || '').trim().length < 6) {
+        this.setInlineStatus('Enter the 6-digit office PIN displayed at your office.');
+        return;
+      }
       return;
     }
     if (!this.gpsReady) {
@@ -884,39 +956,53 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     }
 
     try {
-      const { latitude, longitude, accuracy } = await this.withTimeout(
-        this.getCheckInCoordinates(),
-        20000,
-        'Could not read GPS for check-in. Tap Refresh GPS and try again.'
-      );
-
-      if (!this.withinRadius) {
-        this.loading = false;
-        this.setStatus(
-          `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`
+      if (this.isPinMode) {
+        await firstValueFrom(
+          this.http
+            .post(`${environment.apiUrl}/attendance/checkin/${employeeParam}`, {
+              checkInMode: 'office_pin',
+              selectedLocationId: this.selectedLocationId,
+              officePin: String(this.officePin || '').trim(),
+              photoBase64,
+              faceVerified: faceOk
+            })
+            .pipe(timeout(90000))
         );
-        this.markUiChanged();
-        return;
-      }
+      } else {
+        const { latitude, longitude, accuracy } = await this.withTimeout(
+          this.getCheckInCoordinates(),
+          20000,
+          'Could not read GPS for check-in. Switch to Office PIN check-in if location is blocked.'
+        );
 
-      if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
-        this.loading = false;
-        this.setStatus(`GPS accuracy is ${accuracy}m. Move closer to the office or tap Refresh GPS, then try again.`);
-        this.markUiChanged();
-        return;
-      }
+        if (!this.withinRadius) {
+          this.loading = false;
+          this.setStatus(
+            `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`
+          );
+          this.markUiChanged();
+          return;
+        }
 
-      await firstValueFrom(
-        this.http
-          .post(`${environment.apiUrl}/attendance/checkin/${employeeParam}`, {
-            latitude,
-            longitude,
-            gpsAccuracyMeters: accuracy,
-            photoBase64,
-            faceVerified: faceOk
-          })
-          .pipe(timeout(90000))
-      );
+        if (accuracy !== null && accuracy > this.maxCheckInAccuracyMeters) {
+          this.loading = false;
+          this.setStatus(`GPS accuracy is ${accuracy}m. Move closer to the office or tap Refresh GPS, then try again.`);
+          this.markUiChanged();
+          return;
+        }
+
+        await firstValueFrom(
+          this.http
+            .post(`${environment.apiUrl}/attendance/checkin/${employeeParam}`, {
+              latitude,
+              longitude,
+              gpsAccuracyMeters: accuracy,
+              photoBase64,
+              faceVerified: faceOk
+            })
+            .pipe(timeout(90000))
+        );
+      }
 
       this.loading = false;
       this.statusMessage = 'Checked in successfully!';
@@ -1025,6 +1111,37 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
       return;
     }
+
+    const usePin =
+      this.isPinMode || String(this.todayRecord?.source || '') === 'OFFICE_PIN_WEB';
+    if (usePin) {
+      if (!this.selectedLocationId || String(this.officePin || '').trim().length < 6) {
+        this.setInlineStatus('Select office and enter today\'s 6-digit PIN to check out.');
+        return;
+      }
+      this.loading = true;
+      this.statusMessage = 'Submitting check-out...';
+      this.http
+        .put(`${environment.apiUrl}/attendance/checkout/${employeeId}`, {
+          checkInMode: 'office_pin',
+          selectedLocationId: this.selectedLocationId,
+          officePin: String(this.officePin || '').trim()
+        })
+        .subscribe({
+          next: () => {
+            this.loading = false;
+            this.statusMessage = 'Checked out successfully!';
+            this.toast.success('Checked out successfully!');
+            this.loadAttendance();
+          },
+          error: (err) => {
+            this.loading = false;
+            this.setStatus(err.error?.error || 'Check-out failed');
+          }
+        });
+      return;
+    }
+
     this.loading = true;
     this.statusMessage = 'Verifying location for check-out...';
     getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })

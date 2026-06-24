@@ -1,6 +1,6 @@
 <div class="max-w-md mx-auto" *ngIf="!isAdmin">
 
-  <div *ngIf="showLocationPrompt" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+  <div *ngIf="showLocationPrompt && isGpsMode" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
     <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
       <div class="mb-2 flex items-start justify-between gap-3">
         <h3 class="text-lg font-bold text-[#0F172A]">Turn on location</h3>
@@ -49,12 +49,44 @@
 
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-bold text-[#0F172A]">Work Attendance</h2>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3" *ngIf="isGpsMode">
         <div class="text-sm text-gray-600">GPS: <span class="font-semibold">{{ gpsStatusLabel }}</span></div>
         <button type="button" (click)="refreshGps(true)" [disabled]="gpsRefreshing"
           class="text-xs px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
           {{ gpsRefreshing ? 'Refreshing...' : 'Refresh GPS' }}
         </button>
+      </div>
+    </div>
+
+    <div class="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+      <button type="button" (click)="setCheckInMode('office_pin')"
+        class="rounded-lg px-3 py-2 text-sm font-semibold transition"
+        [ngClass]="isPinMode ? 'bg-white text-[#0F172A] shadow' : 'text-gray-600'">
+        Office PIN
+      </button>
+      <button type="button" (click)="setCheckInMode('gps')"
+        class="rounded-lg px-3 py-2 text-sm font-semibold transition"
+        [ngClass]="isGpsMode ? 'bg-white text-[#0F172A] shadow' : 'text-gray-600'">
+        GPS Location
+      </button>
+    </div>
+
+    <div *ngIf="isPinMode" class="mb-4 space-y-3 rounded-xl border border-green-100 bg-green-50 p-4">
+      <p class="text-sm text-green-800">
+        No browser location needed. Select your office, enter the <strong>6-digit PIN</strong> displayed at reception, then take a selfie.
+      </p>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Office Location</label>
+        <select [(ngModel)]="selectedLocationId"
+          class="w-full border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#16A34A] bg-white">
+          <option value="">Select office</option>
+          <option *ngFor="let loc of locations" [value]="loc._id">{{ loc.name }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Today's Office PIN</label>
+        <input [(ngModel)]="officePin" type="tel" inputmode="numeric" maxlength="6" placeholder="6-digit PIN"
+          class="w-full border rounded-xl px-4 py-3 tracking-widest text-lg focus:outline-none focus:ring-2 focus:ring-[#16A34A] bg-white" />
       </div>
     </div>
 
@@ -75,7 +107,7 @@
     </div>
 
     <!-- Map -->
-    <div class="mb-4">
+    <div class="mb-4" *ngIf="isGpsMode">
       <div id="attendanceMap" class="h-64 w-full rounded-lg border"></div>
       <div class="mt-2 text-sm text-gray-700 flex justify-between">
         <span><span class="font-medium">Nearest:</span> {{ nearestLocationName || 'Locating...' }}</span>
@@ -120,7 +152,7 @@
       </button>
 
       <button (click)="checkOut()"
-        [disabled]="loading || !todayRecord || !gpsReady || !withinRadius || gpsLowAccuracy || !isGeoAttendanceAllowedDay"
+        [disabled]="checkOutDisabled"
         class="w-full bg-[#0F172A] text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition disabled:opacity-50"
         [ngClass]="!todayRecord ? 'opacity-50 cursor-not-allowed' : ''">
         {{ !isGeoAttendanceAllowedDay ? 'Available Tue-Sun Only' : (todayRecord?.checkOutTime ? 'Update Check Out' : 'Check Out') }}

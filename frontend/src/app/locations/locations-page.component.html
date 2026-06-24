@@ -1,6 +1,11 @@
 <div class="space-y-6">
   <div class="flex justify-between items-center">
-    <h1 class="text-2xl font-bold text-[#0F172A]">Attendance Locations</h1>
+    <div>
+      <h1 class="text-2xl font-bold text-[#0F172A]">Attendance Locations</h1>
+      <p class="text-sm text-gray-500 mt-1" *ngIf="pinBusinessDate">
+        Today's office PINs ({{ pinBusinessDate }}) — display these at reception for employee check-in.
+      </p>
+    </div>
     <button (click)="openCreate()" class="bg-[#16A34A] text-white px-4 py-2 rounded-xl font-medium hover:bg-[#15803d] transition">
       Add Location
     </button>
@@ -21,6 +26,7 @@
           <th class="p-3">Latitude</th>
           <th class="p-3">Longitude</th>
           <th class="p-3">Radius (m)</th>
+          <th class="p-3">Today's PIN</th>
           <th class="p-3">Status</th>
           <th class="p-3">Actions</th>
         </tr>
@@ -31,6 +37,9 @@
           <td class="p-3 text-gray-600">{{ loc.latitude }}</td>
           <td class="p-3 text-gray-600">{{ loc.longitude }}</td>
           <td class="p-3 text-gray-600">{{ loc.radius || 20 }}</td>
+          <td class="p-3">
+            <span class="font-mono text-lg font-bold tracking-widest text-[#0F172A]">{{ getPinForLocation(loc._id) }}</span>
+          </td>
           <td class="p-3">
             <span class="px-2 py-1 rounded-full text-xs font-bold uppercase"
               [ngClass]="loc.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'">

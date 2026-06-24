@@ -5,6 +5,7 @@ const { getDistance } = require('../utils/geofence');
 const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, isGeoAttendanceAllowedDay } = require('../utils/businessTime');
+const { verifyOfficePin } = require('../utils/officePin');
 
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
@@ -77,37 +78,69 @@ const resolveEmployeeByParam = async (employeeParam) => {
   return User.findOne({ employeeId: raw }).lean();
 };
 
+const validateSelfie = (photoBase64) => {
+  if (!photoBase64 || typeof photoBase64 !== 'string') {
+    return { ok: false, error: 'Selfie is required' };
+  }
+  const mimeMatch = photoBase64.match(/^data:(image\/(jpeg|jpg|png|webp));base64,/);
+  if (!mimeMatch) {
+    return { ok: false, error: 'Invalid selfie format. Please retake the photo as JPG/PNG.' };
+  }
+  const base64Data = photoBase64.replace(/^data:.+;base64,/, '');
+  const approxBytes = Math.floor(base64Data.length * 0.75);
+  if (approxBytes > 12 * 1024 * 1024) {
+    return { ok: false, error: 'Selfie too large even after compression. Please retake the selfie.' };
+  }
+  return { ok: true };
+};
+
+const resolveOfficePinLocation = async (selectedLocationId, officePin, now) => {
+  if (!selectedLocationId) {
+    return { error: 'Please select your office location.' };
+  }
+  if (!officePin || String(officePin).trim().length < 4) {
+    return { error: 'Please enter the 6-digit office PIN shown at your office.' };
+  }
+  const location = await Location.findOne({ _id: selectedLocationId, active: true })
+    .select('latitude longitude name radius')
+    .lean();
+  if (!location) {
+    return { error: 'Selected office location is not available.' };
+  }
+  if (!verifyOfficePin(location._id, officePin, now)) {
+    return { error: 'Invalid office PIN. Ask your admin for today\'s PIN displayed at the office.' };
+  }
+  return {
+    matched: { location, distance: 0 },
+    lat: Number(location.latitude),
+    lng: Number(location.longitude)
+  };
+};
+
 // @desc    Mark attendance (Check-in)
 // @route   POST /api/attendance/checkin/:employeeId
 // @access  Private
 exports.checkIn = asyncHandler(async (req, res, next) => {
-  const { latitude, longitude, gpsAccuracyMeters, photoBase64, faceVerified, selectedLocationId } = req.body || {};
+  const {
+    latitude,
+    longitude,
+    gpsAccuracyMeters,
+    photoBase64,
+    faceVerified,
+    selectedLocationId,
+    checkInMode,
+    officePin
+  } = req.body || {};
   const employeeId = req.params.employeeId;
-
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  const acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return res.status(400).json({ success: false, error: 'Please provide location coordinates' });
-  }
-
-  if (acc !== null && Number.isFinite(acc) && acc > 100) {
-    return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
-  }
+  const pinMode = String(checkInMode || '').toLowerCase() === 'office_pin';
 
   if (!photoBase64 || typeof photoBase64 !== 'string') {
     return res.status(400).json({ success: false, error: 'Selfie is required' });
   }
 
-  const mimeMatch = photoBase64.match(/^data:(image\/(jpeg|jpg|png|webp));base64,/);
-  if (!mimeMatch) {
-    return res.status(400).json({ success: false, error: 'Invalid selfie format. Please retake the photo as JPG/PNG.' });
-  }
-  const base64Data = photoBase64.replace(/^data:.+;base64,/, '');
-  const approxBytes = Math.floor(base64Data.length * 0.75);
-  if (approxBytes > 12 * 1024 * 1024) {
-    return res.status(400).json({ success: false, error: 'Selfie too large even after compression. Please retake the selfie.' });
+  const selfieCheck = validateSelfie(photoBase64);
+  if (!selfieCheck.ok) {
+    return res.status(400).json({ success: false, error: selfieCheck.error });
   }
 
   if (faceVerified === false) {
@@ -137,7 +170,6 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.' });
   }
 
-  // Check if already checked in today (One Punch-In Policy)
   const { start: startOfDay, end: endOfDay } = getBusinessDayBounds(now);
   const existingAttendance = await Attendance.findOne({
     employeeId: employee._id,
@@ -148,22 +180,49 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'You have already checked in today.' });
   }
 
-  const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
-  if (locationResult.error) {
-    return res.status(400).json({ success: false, error: locationResult.error });
-  }
-  const { best, matched } = locationResult;
-  const locationValidated = Boolean(matched);
-  if (!locationValidated) {
-    // New policy: Off-site or any check-in allowed ONLY within 100m of approved locations
-    return res.status(400).json({
-      success: false,
-      error: `Check-in allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
-    });
+  let lat;
+  let lng;
+  let acc = null;
+  let matched;
+  let source = 'OFFICE_FACE_WEB';
+
+  if (pinMode) {
+    const pinResult = await resolveOfficePinLocation(selectedLocationId, officePin, now);
+    if (pinResult.error) {
+      return res.status(400).json({ success: false, error: pinResult.error });
+    }
+    lat = pinResult.lat;
+    lng = pinResult.lng;
+    matched = pinResult.matched;
+    source = 'OFFICE_PIN_WEB';
+  } else {
+    lat = Number(latitude);
+    lng = Number(longitude);
+    acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ success: false, error: 'Please provide location coordinates' });
+    }
+
+    if (acc !== null && Number.isFinite(acc) && acc > 100) {
+      return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
+    }
+
+    const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
+    if (locationResult.error) {
+      return res.status(400).json({ success: false, error: locationResult.error });
+    }
+    const { best, matched: gpsMatched } = locationResult;
+    if (!gpsMatched) {
+      return res.status(400).json({
+        success: false,
+        error: `Check-in allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}). Try Office PIN check-in if GPS is blocked.`
+      });
+    }
+    matched = gpsMatched;
   }
 
-  // 3. Status Logic (Half Day vs Present)
-  // Max Login Time: 10:00 AM
+  const locationValidated = Boolean(matched);
   const statusInfo = getAttendanceStatus({ checkInTime: now, checkOutTime: null });
 
   let photoUrl = '';
@@ -202,7 +261,7 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     photoUrl,
     photoPublicId,
     faceVerified: faceVerified !== undefined ? Boolean(faceVerified) : true,
-    source: 'OFFICE_FACE_WEB'
+    source
   });
 
   res.status(201).json({ success: true, data: attendance });
@@ -213,7 +272,8 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
 // @access  Private
 exports.checkOut = asyncHandler(async (req, res, next) => {
   const employeeParam = req.params.employeeId;
-  const { latitude, longitude, gpsAccuracyMeters, selectedLocationId } = req.body || {};
+  const { latitude, longitude, gpsAccuracyMeters, selectedLocationId, checkInMode, officePin } = req.body || {};
+  const pinMode = String(checkInMode || '').toLowerCase() === 'office_pin';
   const lat = Number(latitude);
   const lng = Number(longitude);
   const acc = gpsAccuracyMeters !== undefined && gpsAccuracyMeters !== null ? Number(gpsAccuracyMeters) : null;
@@ -240,15 +300,6 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ success: false, error: 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.' });
   }
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return res.status(400).json({ success: false, error: 'Please provide location coordinates for check-out' });
-  }
-
-  if (acc !== null && Number.isFinite(acc) && acc > 100) {
-    return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
-  }
-
-  // Find attendance for today (even if already checked out)
   const attendance = await Attendance.findOne({
     employeeId: employee._id,
     date: { $gte: today, $lte: endOfDay }
@@ -258,23 +309,48 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
     return res.status(404).json({ success: false, error: 'No active check-in found for today' });
   }
 
-  const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
-  if (locationResult.error) {
-    return res.status(400).json({ success: false, error: locationResult.error });
-  }
-  const { best, matched } = locationResult;
-  if (!matched) {
-    return res.status(400).json({
-      success: false,
-      error: `Check-out allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}).`
-    });
+  const usePinCheckout = pinMode || String(attendance.source || '') === 'OFFICE_PIN_WEB';
+  let checkoutLat;
+  let checkoutLng;
+  let matched;
+
+  if (usePinCheckout) {
+    const pinResult = await resolveOfficePinLocation(selectedLocationId, officePin, now);
+    if (pinResult.error) {
+      return res.status(400).json({ success: false, error: pinResult.error });
+    }
+    checkoutLat = pinResult.lat;
+    checkoutLng = pinResult.lng;
+    matched = pinResult.matched;
+  } else {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ success: false, error: 'Please provide location coordinates for check-out' });
+    }
+
+    if (acc !== null && Number.isFinite(acc) && acc > 100) {
+      return res.status(400).json({ success: false, error: 'Location not accurate. Please refresh GPS and try again.' });
+    }
+
+    const locationResult = await getApprovedLocationMatch({ latitude: lat, longitude: lng, selectedLocationId });
+    if (locationResult.error) {
+      return res.status(400).json({ success: false, error: locationResult.error });
+    }
+    const { best, matched: gpsMatched } = locationResult;
+    if (!gpsMatched) {
+      return res.status(400).json({
+        success: false,
+        error: `Check-out allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}). Try Office PIN check-out if GPS is blocked.`
+      });
+    }
+    checkoutLat = lat;
+    checkoutLng = lng;
+    matched = gpsMatched;
   }
 
-  // Always update to the LATEST check-out time
   const checkOutTime = new Date();
   attendance.checkOutTime = checkOutTime;
-  attendance.checkOutLatitude = lat;
-  attendance.checkOutLongitude = lng;
+  attendance.checkOutLatitude = checkoutLat;
+  attendance.checkOutLongitude = checkoutLng;
   attendance.locationValidated = true;
   attendance.insideRadius = true;
   attendance.locationId = matched.location._id;

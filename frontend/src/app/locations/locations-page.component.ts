@@ -17,6 +17,8 @@ export class LocationsPageComponent implements OnInit {
   private toast = inject(ToastService);
 
   locations: any[] = [];
+  todayPins: any[] = [];
+  pinBusinessDate = '';
   loading = false;
   showModal = false;
   isEditing = false;
@@ -36,6 +38,22 @@ export class LocationsPageComponent implements OnInit {
 
   ngOnInit() {
     this.loadLocations();
+    this.loadTodayPins();
+  }
+
+  loadTodayPins() {
+    this.http.get(`${environment.apiUrl}/locations/pins/today`).subscribe({
+      next: (res: any) => {
+        this.todayPins = res.data || [];
+        this.pinBusinessDate = res.businessDate || '';
+      },
+      error: () => {}
+    });
+  }
+
+  getPinForLocation(locationId: string): string {
+    const row = this.todayPins.find((p) => String(p.locationId) === String(locationId));
+    return row?.officePin || '-';
   }
 
   loadLocations() {

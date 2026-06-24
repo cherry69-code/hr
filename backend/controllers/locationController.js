@@ -1,5 +1,6 @@
 const Location = require('../models/Location');
 const asyncHandler = require('../middlewares/asyncHandler');
+const { getDailyOfficePin, getBusinessDateKey } = require('../utils/officePin');
 
 // @desc    Get all locations (active + inactive)
 // @route   GET /api/locations
@@ -15,6 +16,22 @@ exports.getLocations = asyncHandler(async (req, res) => {
 exports.getActiveLocations = asyncHandler(async (req, res) => {
   const locations = await Location.find({ active: true }).sort({ createdAt: -1 }).lean();
   res.status(200).json({ success: true, count: locations.length, data: locations });
+});
+
+// @desc    Get today's office PINs for all active locations (display at office reception)
+// @route   GET /api/locations/pins/today
+// @access  Private/Admin/HR
+exports.getTodayOfficePins = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const locations = await Location.find({ active: true }).sort({ name: 1 }).lean();
+  const businessDate = getBusinessDateKey(now);
+  const data = locations.map((loc) => ({
+    locationId: loc._id,
+    name: loc.name,
+    businessDate,
+    officePin: getDailyOfficePin(loc._id, now)
+  }));
+  res.status(200).json({ success: true, businessDate, data });
 });
 
 // @desc    Create location
