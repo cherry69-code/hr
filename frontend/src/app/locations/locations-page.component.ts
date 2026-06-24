@@ -19,6 +19,12 @@ export class LocationsPageComponent implements OnInit {
   locations: any[] = [];
   todayPins: any[] = [];
   pinBusinessDate = '';
+  monthPinData: any[] = [];
+  monthPinLabel = '';
+  pinYear = new Date().getFullYear();
+  pinMonth = new Date().getMonth() + 1;
+  selectedPinLocationId = '';
+  loadingMonthPins = false;
   loading = false;
   showModal = false;
   isEditing = false;
@@ -37,8 +43,38 @@ export class LocationsPageComponent implements OnInit {
   };
 
   ngOnInit() {
+    const now = new Date();
+    this.pinYear = now.getFullYear();
+    this.pinMonth = now.getMonth() + 1;
     this.loadLocations();
     this.loadTodayPins();
+    this.loadMonthPins();
+  }
+
+  loadMonthPins() {
+    this.loadingMonthPins = true;
+    const params: Record<string, string> = {
+      year: String(this.pinYear),
+      month: String(this.pinMonth)
+    };
+    if (this.selectedPinLocationId) {
+      params['locationId'] = this.selectedPinLocationId;
+    }
+    const query = new URLSearchParams(params).toString();
+    this.http.get(`${environment.apiUrl}/locations/pins/month?${query}`).subscribe({
+      next: (res: any) => {
+        this.monthPinData = res.data || [];
+        this.monthPinLabel = res.monthLabel || '';
+        this.loadingMonthPins = false;
+      },
+      error: () => {
+        this.loadingMonthPins = false;
+      }
+    });
+  }
+
+  printMonthPins() {
+    window.print();
   }
 
   loadTodayPins() {
@@ -56,12 +92,24 @@ export class LocationsPageComponent implements OnInit {
     return row?.officePin || '-';
   }
 
+  onPinMonthChange(value: string) {
+    if (!value || !value.includes('-')) return;
+    const [year, month] = value.split('-').map(Number);
+    if (!year || !month) return;
+    this.pinYear = year;
+    this.pinMonth = month;
+    this.loadMonthPins();
+  }
+
   loadLocations() {
     this.loading = true;
     this.http.get(`${environment.apiUrl}/locations`).subscribe({
       next: (res: any) => {
         this.locations = res.data;
         this.loading = false;
+        if (!this.selectedPinLocationId && this.locations.length === 1) {
+          this.selectedPinLocationId = String(this.locations[0]._id);
+        }
         setTimeout(() => this.initMap(), 0);
       },
       error: () => {

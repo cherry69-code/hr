@@ -59,6 +59,61 @@
     </div>
   </div>
 
+  <div *ngIf="!loading" class="bg-white rounded-2xl shadow overflow-x-auto print-pin-calendar">
+    <div class="p-4 border-b flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-bold text-[#0F172A]">Monthly Office PIN Calendar</h2>
+        <p class="text-sm text-gray-500">{{ monthPinLabel || 'IST business dates' }} — print and keep at reception.</p>
+      </div>
+      <div class="flex flex-wrap items-end gap-2">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Office</label>
+          <select [(ngModel)]="selectedPinLocationId" (ngModelChange)="loadMonthPins()"
+            class="border rounded-lg px-3 py-2 text-sm bg-white min-w-[160px]">
+            <option value="">All offices</option>
+            <option *ngFor="let loc of locations" [value]="loc._id">{{ loc.name }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Month</label>
+          <input type="month" [ngModel]="pinYear + '-' + (pinMonth < 10 ? '0' : '') + pinMonth"
+            (ngModelChange)="onPinMonthChange($event)"
+            class="border rounded-lg px-3 py-2 text-sm bg-white" />
+        </div>
+        <button type="button" (click)="loadMonthPins()" [disabled]="loadingMonthPins"
+          class="border rounded-lg px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50">
+          {{ loadingMonthPins ? 'Loading...' : 'Refresh' }}
+        </button>
+        <button type="button" (click)="printMonthPins()"
+          class="bg-[#0F172A] text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-800">
+          Print
+        </button>
+      </div>
+    </div>
+
+    <div *ngIf="loadingMonthPins" class="p-8 text-center text-gray-500">Loading monthly PINs...</div>
+
+    <div *ngFor="let block of monthPinData" class="p-4 border-b last:border-b-0">
+      <h3 class="font-bold text-[#0F172A] mb-3">{{ block.name }}</h3>
+      <table class="w-full text-left text-sm">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="p-2">Date</th>
+            <th class="p-2">Day</th>
+            <th class="p-2">Office PIN</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of block.schedule" class="border-t">
+            <td class="p-2 font-medium">{{ row.businessDate }}</td>
+            <td class="p-2 text-gray-600">{{ row.dayName }}</td>
+            <td class="p-2 font-mono text-base font-bold tracking-widest">{{ row.officePin }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div *ngIf="showModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 relative">
       <div class="flex justify-between items-center mb-6">

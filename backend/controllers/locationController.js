@@ -1,6 +1,7 @@
 const Location = require('../models/Location');
 const asyncHandler = require('../middlewares/asyncHandler');
-const { getDailyOfficePin, getBusinessDateKey } = require('../utils/officePin');
+const { getDailyOfficePin, getBusinessDateKey, getMonthOfficePinSchedule } = require('../utils/officePin');
+const { getBusinessParts } = require('../utils/businessTime');
 
 // @desc    Get all locations (active + inactive)
 // @route   GET /api/locations
@@ -32,6 +33,52 @@ exports.getTodayOfficePins = asyncHandler(async (req, res) => {
     officePin: getDailyOfficePin(loc._id, now)
   }));
   res.status(200).json({ success: true, businessDate, data });
+});
+
+// @desc    Get office PIN calendar for a month (print at reception)
+// @route   GET /api/locations/pins/month
+// @access  Private/Admin/HR
+exports.getMonthOfficePins = asyncHandler(async (req, res) => {
+  const parts = getBusinessParts(new Date());
+  const year = Number(req.query.year) || parts.year;
+  const month = Number(req.query.month) || parts.month + 1;
+  const locationId = req.query.locationId ? String(req.query.locationId) : '';
+
+  if (!Number.isFinite(year) || year < 2020 || year > 2100) {
+    return res.status(400).json({ success: false, error: 'Invalid year' });
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    return res.status(400).json({ success: false, error: 'Invalid month' });
+  }
+
+  const monthLabel = new Date(year, month - 1, 1).toLocaleString('en-IN', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata'
+  });
+
+  let locations = await Location.find({ active: true }).sort({ name: 1 }).lean();
+  if (locationId) {
+    locations = locations.filter((loc) => String(loc._id) === locationId);
+    if (!locations.length) {
+      return res.status(404).json({ success: false, error: 'Location not found or inactive' });
+    }
+  }
+
+  const data = locations.map((loc) => ({
+    locationId: loc._id,
+    name: loc.name,
+    schedule: getMonthOfficePinSchedule(loc._id, year, month)
+  }));
+
+  res.status(200).json({
+    success: true,
+    year,
+    month,
+    monthLabel,
+    timezone: 'IST',
+    data
+  });
 });
 
 // @desc    Create location
