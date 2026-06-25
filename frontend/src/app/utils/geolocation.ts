@@ -13,7 +13,63 @@ export const isGeolocationPermissionDenied = (err: unknown): boolean => {
 };
 
 export const getLocationDeniedInstructions = (hostname: string = 'this site'): string => {
-  return `Location is blocked for ${hostname}. Tap the icon left of the address bar, open Site settings, set Location to Allow, then tap Try Again.`;
+  return `Location is blocked for ${hostname}. Tap "Open Chrome Settings" below, set Location to Allow, then return and tap Try Again.`;
+};
+
+export const isAndroidChrome = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android/i.test(ua) && /Chrome/i.test(ua) && !/Edg|OPR|SamsungBrowser/i.test(ua);
+};
+
+export const isIosSafari = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS/i.test(ua);
+};
+
+/** Best-effort: open device/browser settings. Site permission cannot be granted fully automatically from web. */
+export const openBrowserLocationSettings = (hostname?: string): 'chrome_app' | 'location' | 'ios_guide' | 'unsupported' => {
+  if (typeof window === 'undefined') return 'unsupported';
+  const host = hostname || window.location.hostname || 'this site';
+
+  if (isAndroidChrome()) {
+    const chromeAppIntent =
+      'intent:#Intent;action=android.settings.APPLICATION_DETAILS_SETTINGS;scheme=package;package=com.android.chrome;end';
+    const locationIntent = 'intent:#Intent;action=android.settings.LOCATION_SOURCE_SETTINGS;end';
+    try {
+      window.location.href = chromeAppIntent;
+      return 'chrome_app';
+    } catch {
+      try {
+        window.location.assign(locationIntent);
+        return 'location';
+      } catch {
+        return 'unsupported';
+      }
+    }
+  }
+
+  if (isIosSafari()) {
+    return 'ios_guide';
+  }
+
+  void host;
+  return 'unsupported';
+};
+
+export const triggerNativeLocationPrompt = (): Promise<GeolocationPosition> => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation not supported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 0
+    });
+  });
 };
 
 export const getGeolocationErrorMessage = (err: unknown, hostname: string = 'hrpropninja.com'): string => {

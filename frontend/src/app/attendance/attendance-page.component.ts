@@ -14,6 +14,10 @@ import {
   getGeolocationErrorMessage,
   getLocationDeniedInstructions,
   isGeolocationPermissionDenied,
+  openBrowserLocationSettings,
+  isAndroidChrome,
+  isIosSafari,
+  triggerNativeLocationPrompt,
   queryLocationPermission,
   watchLocationPermission
 } from '../utils/geolocation';
@@ -76,6 +80,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   checkInMode: 'office_pin' | 'gps' = 'office_pin';
   selectedLocationId = '';
   officePin = '';
+  locationSettingsHint = '';
   private readonly onVisibilityChange = () => {
     if (document.visibilityState !== 'visible') return;
     this.loadGeoPolicy();
@@ -137,6 +142,14 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (!this.gpsReady) return 'Allow Location First';
     if (!this.withinRadius || this.gpsLowAccuracy) return 'Out of Range';
     return 'Check In (Selfie)';
+  }
+
+  get showGpsLocationGate(): boolean {
+    return this.isGpsMode && !this.gpsReady;
+  }
+
+  get isAndroidChromeBrowser(): boolean {
+    return isAndroidChrome();
   }
 
   get checkInButtonClass(): string {
@@ -395,13 +408,39 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
 
   setCheckInMode(mode: 'office_pin' | 'gps') {
     this.checkInMode = mode;
-    this.showLocationPrompt = false;
-    this.locationPromptDismissed = true;
+    this.locationSettingsHint = '';
     this.statusMessage = '';
-    if (mode === 'gps') {
-      this.startWatchingLocationPermission();
-      void this.bootstrapLocationAccess();
+    if (mode === 'office_pin') {
+      this.showLocationPrompt = false;
+      this.locationPromptDismissed = true;
+      return;
     }
+    this.locationPromptDismissed = false;
+    this.startWatchingLocationPermission();
+    void this.beginGpsAccessFlow(true);
+  }
+
+  openChromeLocationSettings() {
+    const result = openBrowserLocationSettings(this.siteHostname);
+    if (result === 'chrome_app') {
+      this.locationSettingsHint =
+        'Chrome settings opened. Tap Permissions → Location → Allow, then use the back button to return here and tap Try Again.';
+    } else if (result === 'location') {
+      this.locationSettingsHint = 'Turn on device location, then return and tap Try Again.';
+    } else if (result === 'ios_guide') {
+      this.locationSettingsHint =
+        'Go to iPhone Settings → Safari → Location → Allow, or tap the "aA" icon in the address bar → Website Settings → Location → Allow.';
+    } else {
+      this.locationSettingsHint =
+        'Tap the lock/site icon left of the address bar → Site settings → Location → Allow.';
+    }
+    this.showLocationPrompt = true;
+    this.markUiChanged();
+  }
+
+  useOfficePinInstead() {
+    this.setCheckInMode('office_pin');
+    this.toast.info('Switched to Office PIN — no browser location needed.');
   }
 
   ngOnDestroy() {
@@ -469,7 +508,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           this.selectedLocationId = String(this.locations[0]._id);
         }
         setTimeout(() => {
-          this.initMap();
+          if (this.gpsReady) {
+            this.ensureMap();
+          }
           if (this.checkInMode === 'gps') {
             this.bootstrapLocationAccess();
           }
@@ -479,35 +520,97 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   private async bootstrapLocationAccess() {
+    await this.beginGpsAccessFlow(false);
+  }
+
+  allowLocationAccess() {
+    void this.beginGpsAccessFlow(true);
+  }
+
+  private async beginGpsAccessFlow(userInitiated: boolean) {
+    this.locationPromptDismissed = false;
+    this.showLocationPrompt = true;
     const permission = await this.syncLocationPermission();
+
     if (permission === 'granted') {
       this.refreshGps(false);
       return;
     }
+
     if (permission === 'denied') {
-      this.applyLocationDeniedState(false);
+      this.applyLocationDeniedState(userInitiated);
+      if (userInitiated) {
+        this.openChromeLocationSettings();
+      }
       return;
     }
-    if (!this.locationPromptDismissed) {
-      this.showLocationPrompt = true;
-      this.locationPromptMessage = 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
-    }
-  }
 
-  allowLocationAccess() {
-    void this.requestLocationAccess();
-  }
+    this.locationPromptMessage = userInitiated
+      ? 'Allow location when Chrome asks, or tap Open Chrome Settings if blocked.'
+      : 'PropNinja HR needs your live GPS location for geo punch-in at the office.';
 
-  private async requestLocationAccess() {
-    this.locationPromptDismissed = false;
-    const permission = await this.syncLocationPermission();
-    if (permission === 'denied') {
-      this.applyLocationDeniedState(true);
+    if (userInitiated) {
+      this.gpsRefreshing = true;
+      try {
+        const pos = await triggerNativeLocationPrompt();
+        this.gpsRefreshing = false;
+        this.applyGpsPosition(pos);
+        if (!userInitiated) return;
+        this.toast.success('Location enabled');
+      } catch (err) {
+        this.handleGpsFailure(err, userInitiated);
+        if (isGeolocationPermissionDenied(err)) {
+          this.openChromeLocationSettings();
+        }
+      }
       return;
     }
+
     this.showLocationPrompt = true;
-    this.locationPromptMessage = 'Requesting GPS… Allow location when your browser asks.';
-    this.refreshGps(true);
+  }
+
+  private applyGpsPosition(pos: GeolocationPosition) {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    this.lastGpsFixAt = new Date();
+    this.lastGpsAccuracyMeters = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
+    this.gpsLowAccuracy = this.lastGpsAccuracyMeters !== null && this.lastGpsAccuracyMeters > 500;
+    this.lastKnownPosition = { lat, lng, accuracy: this.lastGpsAccuracyMeters, at: Date.now() };
+    this.computeNearest(lat, lng);
+    this.gpsReady = true;
+    this.locationPermission = 'granted';
+    this.showLocationPrompt = false;
+    this.locationPromptDismissed = false;
+    this.lastGpsErrorMessage = '';
+    this.gpsRefreshing = false;
+    this.statusMessage = '';
+    this.ensureMap(lat, lng);
+    this.markUiChanged();
+  }
+
+  private ensureMap(lat?: number, lng?: number) {
+    if (!this.isGpsMode) return;
+    setTimeout(() => {
+      this.initMap();
+      if (lat !== undefined && lng !== undefined && this.map) {
+        const userIcon = L.divIcon({
+          className: 'custom-user',
+          html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        if (this.userMarker) {
+          try {
+            this.map.removeLayer(this.userMarker);
+          } catch {}
+        }
+        this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
+        try {
+          this.map.panTo([lat, lng]);
+          this.map.invalidateSize();
+        } catch {}
+      }
+    }, 0);
   }
 
   initMap() {
@@ -540,52 +643,10 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
 
     if (this.gpsRefreshing) return;
 
-    if (!this.map) {
-      this.initMap();
-    }
-
     this.gpsRefreshing = true;
     getBestPosition({ timeoutMs: 12000, desiredAccuracyMeters: 60 })
       .then((pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        this.lastGpsFixAt = new Date();
-        this.lastGpsAccuracyMeters = typeof pos.coords.accuracy === 'number' ? Math.round(pos.coords.accuracy) : null;
-        this.gpsLowAccuracy = this.lastGpsAccuracyMeters !== null && this.lastGpsAccuracyMeters > 500;
-
-        const userIcon = L.divIcon({
-          className: 'custom-user',
-          html: '<div style="background:#3b82f6;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
-        if (this.userMarker) {
-          try {
-            this.map.removeLayer(this.userMarker);
-          } catch {}
-        }
-        this.userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(this.map).bindPopup('You are here');
-
-        this.computeNearest(lat, lng);
-        this.lastKnownPosition = { lat, lng, accuracy: this.lastGpsAccuracyMeters, at: Date.now() };
-        try {
-          this.map.panTo([lat, lng]);
-        } catch {}
-        try {
-          this.map.invalidateSize();
-        } catch {}
-
-        this.gpsReady = true;
-        this.locationPermission = 'granted';
-        this.showLocationPrompt = false;
-        this.locationPromptDismissed = false;
-        this.lastGpsErrorMessage = '';
-        this.gpsRefreshing = false;
-        const blockedDayMsg =
-          this.statusMessage.includes('Location is blocked') ||
-          this.statusMessage.includes('Unable to get your location') ||
-          this.statusMessage.includes('GPS signal');
-        if (blockedDayMsg) this.statusMessage = '';
+        this.applyGpsPosition(pos);
         if (this.gpsLowAccuracy) {
           this.setInlineStatus(
             'GPS accuracy is low. Move closer to a window, disable VPN, then tap Refresh GPS.'
@@ -596,6 +657,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       })
       .catch((err) => {
         this.handleGpsFailure(err, userInitiated);
+        if (userInitiated && isGeolocationPermissionDenied(err)) {
+          this.openChromeLocationSettings();
+        }
       });
   }
 
