@@ -12,6 +12,7 @@ function shouldSkip(file) {
   if (skipDirs.some((d) => file.startsWith(`${d}/`) || file.includes(`/${d}/`))) return true;
   const skipFiles = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
   if (skipFiles.some((f) => file.endsWith(f))) return true;
+  if (/frontend\/src\/environments\/environment(\.prod)?\.ts$/.test(file.replace(/\\/g, '/'))) return true;
   return false;
 }
 
