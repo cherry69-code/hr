@@ -67,8 +67,17 @@ export class LoginComponent {
         });
       },
       error: (err) => {
-        this.error = err.error?.error || 'Login failed';
         this.loading = false;
+        if (err.status === 0 || err.status === 503) {
+          this.error =
+            'HR server is offline. The API (api.hrpropninja.com) is not running. Please contact admin to restart the backend on Render.';
+          return;
+        }
+        if (err.status === 401 || err.status === 403) {
+          this.error = err.error?.error || 'Invalid email/employee code or password.';
+          return;
+        }
+        this.error = err.error?.error || err.message || 'Login failed. Please try again.';
       }
     });
   }

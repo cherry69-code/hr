@@ -30,12 +30,34 @@ const corsOrigins = String(corsOriginsRaw)
   .map((o) => String(o).trim().replace(/[`"' \t\r\n]/g, ''))
   .filter(Boolean);
 
+const defaultHrOrigins = [
+  'https://hrpropninja.com',
+  'https://www.hrpropninja.com',
+  'http://hrpropninja.com',
+  'http://www.hrpropninja.com',
+  'http://localhost:4200'
+];
+
+const isAllowedCorsOrigin = (origin) => {
+  if (!origin) return true;
+  const normalized = String(origin).trim().replace(/\/$/, '');
+  if (defaultHrOrigins.includes(normalized)) return true;
+  if (corsOrigins.includes(normalized)) return true;
+  return /^https?:\/\/([\w-]+\.)?hrpropninja\.com$/i.test(normalized);
+};
+
 if (String(process.env.NODE_ENV).toLowerCase() === 'development') {
-  console.log('Allowed CORS Origins:', corsOrigins);
+  console.log('Allowed CORS Origins:', [...new Set([...defaultHrOrigins, ...corsOrigins])]);
 }
 
 const corsOptions = {
-  origin: true,
+  origin(origin, callback) {
+    if (isAllowedCorsOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -59,13 +81,11 @@ if (String(process.env.NODE_ENV).toLowerCase() === 'production') {
 // Ensure CORS headers are present even on 404/errors and for any preflight
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin && isAllowedCorsOrigin(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Vary', 'Origin');
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
   }
-  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
   if (req.method === 'OPTIONS') {
@@ -144,6 +164,15 @@ app.use('/api/incentives', incentives);
 app.use('/api/biometric', biometric);
 app.use('/api/field-attendance', fieldAttendance);
 app.use('/api/leaderboard', leaderboard);
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    service: 'hrpropninja-api',
+    status: 'ok',
+    time: new Date().toISOString()
+  });
+});
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
