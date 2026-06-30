@@ -70,7 +70,7 @@ export class LoginComponent {
         this.loading = false;
         if (err.status === 0 || err.status === 503) {
           this.error =
-            'HR server is offline. The API (api.hrpropninja.com) is not running. Please contact admin to restart the backend on Render.';
+            'HR server is offline. Please contact admin — the API backend may need to be restarted on Render.';
           return;
         }
         if (err.status === 401 || err.status === 403) {
