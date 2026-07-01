@@ -1,6 +1,6 @@
 export const environment = {
   production: true,
-  baseUrl: 'https://propninja-backend-1.onrender.com',
-  apiUrl: 'https://propninja-backend-1.onrender.com/api',
+  baseUrl: 'https://api.hrpropninja.com',
+  apiUrl: 'https://api.hrpropninja.com/api',
   googleMapsApiKey: ''
 };
