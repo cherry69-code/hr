@@ -21,7 +21,7 @@ import {
   queryLocationPermission,
   watchLocationPermission
 } from '../utils/geolocation';
-import { getBusinessDateKey, isGeoAttendanceAllowedDay as isGeoAttendanceAllowedToday } from '../utils/businessTime';
+import { getBusinessDateKey, isGeoAttendanceAllowedDay as isGeoAttendanceAllowedToday, isGeoAllowedAtLocationName, HQ2_WEEKEND_GEO_MESSAGE } from '../utils/businessTime';
 
 @Component({
   selector: 'app-attendance-page',
@@ -46,6 +46,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   locations: any[] = [];
   withinRadius = false;
   nearestLocationName = '';
+  nearestLocation: any = null;
   nearestDistanceMeters: number | null = null;
   gpsRefreshing = false;
   lastGpsFixAt: Date | null = null;
@@ -104,6 +105,15 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     return isGeoAttendanceAllowedToday(new Date());
   }
 
+  get hq2WeekendGeoBlocked(): boolean {
+    if (!this.isGpsMode || !this.withinRadius || !this.nearestLocationName) return false;
+    return !isGeoAllowedAtLocationName(this.nearestLocationName, new Date());
+  }
+
+  get isGpsCheckInAllowed(): boolean {
+    return this.isGeoAttendanceAllowedDay && !this.hq2WeekendGeoBlocked;
+  }
+
   get isPinMode() {
     return this.checkInMode === 'office_pin';
   }
@@ -119,6 +129,7 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   get checkInDisabled(): boolean {
     if (this.loading || !!this.todayRecord || !this.isGeoAttendanceAllowedDay) return true;
     if (this.isPinMode) return !this.pinReady;
+    if (this.hq2WeekendGeoBlocked) return true;
     return !this.gpsReady || !this.withinRadius || this.gpsLowAccuracy;
   }
 
@@ -127,11 +138,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     if (this.isPinMode || this.todayRecord?.source === 'OFFICE_PIN_WEB') {
       return !this.pinReady;
     }
+    if (this.hq2WeekendGeoBlocked) return true;
     return !this.gpsReady || !this.withinRadius || this.gpsLowAccuracy;
   }
 
   get checkInLabel(): string {
     if (!this.isGeoAttendanceAllowedDay) return 'Available Tue-Sun Only';
+    if (this.hq2WeekendGeoBlocked) return 'HQ2: GPS closed Sat-Sun';
     if (this.todayRecord) return 'Checked In';
     if (this.loading) return 'Processing...';
     if (this.isPinMode) {
@@ -664,12 +677,19 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
   }
 
   computeNearest(lat: number, lng: number) {
-    if (!this.locations.length) { this.withinRadius = false; this.nearestLocationName = ''; this.nearestDistanceMeters = null; return; }
+    if (!this.locations.length) {
+      this.withinRadius = false;
+      this.nearestLocationName = '';
+      this.nearestLocation = null;
+      this.nearestDistanceMeters = null;
+      return;
+    }
     let best: any = null;
     for (const loc of this.locations) {
       const d = this.getDistanceMeters(lat, lng, loc.latitude, loc.longitude);
       if (!best || d < best.distance) best = { location: loc, distance: d };
     }
+    this.nearestLocation = best.location;
     this.nearestLocationName = best.location.name;
     this.nearestDistanceMeters = Math.round(best.distance);
     const allowedRadius = Math.max(1, Number(best.location.radius || 20));
@@ -678,6 +698,9 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       return;
     }
     this.withinRadius = best.distance <= allowedRadius;
+    if (this.hq2WeekendGeoBlocked) {
+      this.setInlineStatus(HQ2_WEEKEND_GEO_MESSAGE);
+    }
   }
 
   getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -739,6 +762,10 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
     }
     if (!this.isGeoAttendanceAllowedDay) {
       this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
+      return;
+    }
+    if (this.hq2WeekendGeoBlocked) {
+      this.setStatus(HQ2_WEEKEND_GEO_MESSAGE);
       return;
     }
     if (this.todayRecord) {
@@ -971,6 +998,10 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
       this.setStatus(this.geoPolicyMessage || 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.');
       return;
     }
+    if (this.hq2WeekendGeoBlocked) {
+      this.setStatus(HQ2_WEEKEND_GEO_MESSAGE);
+      return;
+    }
     if (this.todayRecord) {
       this.setStatus('You have already checked in today.');
       return;
@@ -1044,6 +1075,13 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
           this.setStatus(
             `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-in allowed only at the approved location radius.`
           );
+          this.markUiChanged();
+          return;
+        }
+
+        if (this.hq2WeekendGeoBlocked) {
+          this.loading = false;
+          this.setStatus(HQ2_WEEKEND_GEO_MESSAGE);
           this.markUiChanged();
           return;
         }
@@ -1222,6 +1260,12 @@ export class AttendancePageComponent implements OnInit, OnDestroy {
         if (!this.withinRadius) {
           this.loading = false;
           this.statusMessage = `You are ${this.nearestDistanceMeters}m from ${this.nearestLocationName}. Check-out allowed only at the approved location radius.`;
+          return;
+        }
+
+        if (this.hq2WeekendGeoBlocked) {
+          this.loading = false;
+          this.setStatus(HQ2_WEEKEND_GEO_MESSAGE);
           return;
         }
 

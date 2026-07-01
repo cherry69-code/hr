@@ -6,6 +6,7 @@ const asyncHandler = require('../middlewares/asyncHandler');
 const cloudinary = require('../config/cloudinary');
 const { getBusinessDayBounds, getBusinessMinutes, getBusinessParts, isGeoAttendanceAllowedDay } = require('../utils/businessTime');
 const { verifyOfficePin } = require('../utils/officePin');
+const { isGeoAllowedAtLocation, geoBlockMessageForLocation, isHq2Location, isWeekendDay } = require('../utils/geoPolicy');
 
 const CHECK_IN_CUTOFF_HOUR = 10;
 const CHECK_OUT_CUTOFF_HOUR = 18;
@@ -219,6 +220,12 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
         error: `Check-in allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}). Try Office PIN check-in if GPS is blocked.`
       });
     }
+    if (!isGeoAllowedAtLocation(gpsMatched.location, now)) {
+      return res.status(400).json({
+        success: false,
+        error: geoBlockMessageForLocation(gpsMatched.location, now)
+      });
+    }
     matched = gpsMatched;
   }
 
@@ -342,6 +349,12 @@ exports.checkOut = asyncHandler(async (req, res, next) => {
         error: `Check-out allowed only at approved locations. You are ${Math.round(best.distance)}m from nearest (${best.location.name}). Try Office PIN check-out if GPS is blocked.`
       });
     }
+    if (!isGeoAllowedAtLocation(gpsMatched.location, now)) {
+      return res.status(400).json({
+        success: false,
+        error: geoBlockMessageForLocation(gpsMatched.location, now)
+      });
+    }
     checkoutLat = lat;
     checkoutLng = lng;
     matched = gpsMatched;
@@ -462,16 +475,36 @@ exports.getGeoAttendancePolicy = asyncHandler(async (req, res) => {
   const businessDayName = BUSINESS_DAY_NAMES[parts.dayOfWeek] || 'Unknown';
   const businessDate = `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.dayOfMonth).padStart(2, '0')}`;
 
+  let location = null;
+  const locationId = String(req.query.locationId || '').trim();
+  if (locationId) {
+    location = await Location.findOne({ _id: locationId, active: true }).select('name').lean();
+  }
+
+  const locationGeoAllowed = location ? isGeoAllowedAtLocation(location, now) : allowed;
+  const hq2WeekendBlocked = Boolean(location && isHq2Location(location) && isWeekendDay(now));
+  const effectiveAllowed = location ? locationGeoAllowed : allowed;
+
+  let message = effectiveAllowed
+    ? `Geo punch is open today (${businessDayName}, IST). Allowed days: Tuesday to Sunday.`
+    : 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.';
+
+  if (location && !locationGeoAllowed) {
+    message = geoBlockMessageForLocation(location, now) || message;
+  }
+
   return res.status(200).json({
     success: true,
     data: {
-      allowed,
+      allowed: effectiveAllowed,
+      globalAllowed: allowed,
+      locationGeoAllowed,
+      hq2WeekendBlocked,
+      locationName: location?.name || '',
       businessDayOfWeek: parts.dayOfWeek,
       businessDayName,
       businessDate,
-      message: allowed
-        ? `Geo punch is open today (${businessDayName}, IST). Allowed days: Tuesday to Sunday.`
-        : 'Monday is weekly off. Geo punch is allowed Tuesday to Sunday only.'
+      message
     }
   });
 });

@@ -5,18 +5,19 @@ const AuditLog = require('../models/AuditLog');
 const PayrollAttendanceSummary = require('../models/PayrollAttendanceSummary');
 const asyncHandler = require('../middlewares/asyncHandler');
 const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
+const { countPresentPayrollDays, calculateProratedInHandSalary } = require('../utils/payrollAttendance');
 
 // Helper to recalculate payroll summary
 const recalculatePayrollSummary = async (employeeId, date) => {
   const targetDate = new Date(date);
-  const month = targetDate.getMonth() + 1; // 1-12
+  const month = targetDate.getMonth() + 1;
   const year = targetDate.getFullYear();
-  
+
   const startOfMonth = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
   startOfMonth.setHours(0, 0, 0, 0);
   const endDay = new Date(year, month, 0);
   endDay.setHours(0, 0, 0, 0);
+  const daysInMonth = endDay.getDate();
 
   const employee = await User.findById(employeeId).select('salary joiningDate').lean();
 
@@ -46,55 +47,36 @@ const recalculatePayrollSummary = async (employeeId, date) => {
     }
   }
 
-  // 1. Fetch attendance records for the month
+  const dayStats = await countPresentPayrollDays(employeeId, effectiveStart, endDay);
+
+  let annualCTC = Number(employee?.salary?.ctc || 0);
+  try {
+    const { decryptField } = require('../utils/fieldCrypto');
+    annualCTC = Number(decryptField(employee?.salary?.ctc ?? 0) || 0);
+  } catch {}
+
+  const { monthlyInHand, netSalary } = calculateProratedInHandSalary(annualCTC, daysInMonth, dayStats.presentDays);
+  const salaryDeduction = Math.max(0, Math.round(monthlyInHand - netSalary));
+
   const records = await Attendance.find({
     employeeId,
-    date: { $gte: effectiveStart, $lte: endOfMonth }
-  });
+    date: { $gte: effectiveStart, $lte: new Date(year, month, 0, 23, 59, 59, 999) }
+  }).select('status').lean();
 
-  // 2. Count statuses
   let present = 0;
   let halfDay = 0;
   let lop = 0;
   let absent = 0;
-
-  records.forEach(r => {
-    const s = r.status ? r.status.toLowerCase() : 'absent';
+  records.forEach((r) => {
+    const s = r.status ? String(r.status).toLowerCase() : 'absent';
     if (s === 'present' || s === 'late' || s === 'weekly off work') present++;
     else if (s === 'half day') halfDay++;
     else if (s === 'lop') lop++;
     else if (s === 'absent' || s === 'missed punch') absent++;
   });
 
-  // 3. Calculate Logic
-  // Present = 1 day
-  // Half Day = 0.5 day
-  // LOP = Deduction (Not counted in working days)
-  // Absent = Deduction (Not counted in working days)
-  
-  const calculatedWorkDays = present + (halfDay * 0.5);
-  
-  // Salary Deduction Logic
-  // Assuming 30 days or actual days in month?
-  // Usually salary is fixed monthly. Deduction is per day LOP/Absent.
-  let annualCTC = Number(employee?.salary?.ctc || 0);
-  try {
-    const { decryptField } = require('../utils/fieldCrypto');
-    annualCTC = Number(decryptField(employee?.salary?.ctc ?? 0) || 0);
-  } catch {}
-  const monthlySalary = annualCTC / 12;
-  
-  // Total days in month for per-day calculation
-  const daysInMonth = endDay.getDate();
-  const eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const factor = daysInMonth > 0 ? eligibleDays / daysInMonth : 1;
-  const baseMonthly = monthlySalary * factor;
-  const salaryPerDay = eligibleDays > 0 ? (baseMonthly / eligibleDays) : 0;
-  
-  const deductionDays = lop + absent + (halfDay * 0.5);
-  const salaryDeduction = Math.round(deductionDays * salaryPerDay);
+  const calculatedWorkDays = dayStats.presentDays;
 
-  // 4. Update Summary
   await PayrollAttendanceSummary.findOneAndUpdate(
     { employeeId, month, year },
     {

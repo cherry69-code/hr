@@ -9,7 +9,7 @@ import * as L from 'leaflet';
 import { Router, RouterModule } from '@angular/router';
 import { environment } from '../../environments/environment';
 import { getBestPosition } from '../utils/geolocation';
-import { isCheckInOnTime } from '../utils/businessTime';
+import { isCheckInOnTime, isGeoAllowedAtLocationName, HQ2_WEEKEND_GEO_MESSAGE } from '../utils/businessTime';
 
 @Component({
   selector: 'app-employee-home',
@@ -327,6 +327,12 @@ export class EmployeeHomeComponent implements OnInit, AfterViewInit, OnDestroy {
         this.computeNearestLocation(payload.latitude, payload.longitude);
         if (this.mapInitialized) {
           this.renderUserLocation();
+        }
+
+        if (this.withinGeofence && !isGeoAllowedAtLocationName(this.nearestLocationName, new Date())) {
+          this.statusMessage = HQ2_WEEKEND_GEO_MESSAGE;
+          this.loading = false;
+          return;
         }
 
         const userId = this.authService.getMongoUserId();

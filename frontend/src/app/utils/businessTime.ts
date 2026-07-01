@@ -27,6 +27,25 @@ export const isGeoAttendanceAllowedDay = (date: Date = new Date()): boolean => {
   return day === 0 || day >= 2;
 };
 
+export const isWeekendDay = (date: Date = new Date()): boolean => {
+  const day = getBusinessParts(date).dayOfWeek;
+  return day === 0 || day === 6;
+};
+
+export const isHq2LocationName = (name: string): boolean => {
+  const normalized = String(name || '').trim().toLowerCase();
+  return /\bhq\s*-?\s*2\b/.test(normalized);
+};
+
+export const HQ2_WEEKEND_GEO_MESSAGE =
+  'GPS check-in is not available at HQ2 on Saturday and Sunday. Use Office PIN instead.';
+
+export const isGeoAllowedAtLocationName = (locationName: string, date: Date = new Date()): boolean => {
+  if (!isGeoAttendanceAllowedDay(date)) return false;
+  if (isHq2LocationName(locationName) && isWeekendDay(date)) return false;
+  return true;
+};
+
 export const isSameBusinessDay = (a: Date, b: Date): boolean => {
   return getBusinessDateKey(a) === getBusinessDateKey(b);
 };

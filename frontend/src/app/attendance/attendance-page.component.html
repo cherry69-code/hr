@@ -97,6 +97,14 @@
       </button>
     </div>
 
+    <div *ngIf="isGpsMode && hq2WeekendGeoBlocked" class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p class="font-semibold mb-1">HQ2 — GPS closed on weekends</p>
+      <p>GPS check-in is not available at HQ2 on Saturday and Sunday. Switch to <strong>Office PIN</strong> to check in.</p>
+      <button type="button" (click)="useOfficePinInstead()" class="mt-3 text-sm font-semibold text-[#16A34A] underline">
+        Use Office PIN instead
+      </button>
+    </div>
+
     <div *ngIf="isPinMode" class="mb-4 space-y-3 rounded-xl border border-green-100 bg-green-50 p-4">
       <p class="text-sm text-green-800">
         No browser location needed. Select your office, enter the <strong>6-digit PIN</strong> displayed at reception, then take a selfie.
