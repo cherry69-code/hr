@@ -57,10 +57,65 @@ const getBusinessDayBounds = (date) => {
   };
 };
 
+const getDaysInCalendarMonth = (year, monthIndex) => {
+  return new Date(Date.UTC(Number(year), Number(monthIndex) + 1, 0)).getUTCDate();
+};
+
+const dateFromBusinessCalendar = (year, monthIndex, dayOfMonth) => {
+  const offsetMs = getBusinessTzOffsetMinutes() * 60 * 1000;
+  return new Date(Date.UTC(Number(year), Number(monthIndex), Number(dayOfMonth), 12, 0, 0, 0) - offsetMs);
+};
+
+const businessDateKeyFromParts = (year, monthIndex, dayOfMonth) =>
+  `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(dayOfMonth).padStart(2, '0')}`;
+
+const compareBusinessDates = (a, b) => {
+  if (a.year !== b.year) return a.year - b.year;
+  if (a.month !== b.month) return a.month - b.month;
+  return a.dayOfMonth - b.dayOfMonth;
+};
+
+const eachBusinessCalendarDay = (rangeStart, rangeEnd, fn) => {
+  const start = getBusinessParts(rangeStart);
+  const end = getBusinessParts(rangeEnd);
+  let year = start.year;
+  let month = start.month;
+  let day = start.dayOfMonth;
+
+  while (compareBusinessDates({ year, month, dayOfMonth: day }, end) <= 0) {
+    const dateKey = businessDateKeyFromParts(year, month, day);
+    const dateRef = dateFromBusinessCalendar(year, month, day);
+    fn({ year, month, dayOfMonth: day, dateKey, dateRef });
+
+    day += 1;
+    const daysInMonth = getDaysInCalendarMonth(year, month);
+    if (day > daysInMonth) {
+      day = 1;
+      month += 1;
+      if (month > 11) {
+        month = 0;
+        year += 1;
+      }
+    }
+  }
+};
+
+const isBusinessMonthComplete = (year, month1to12) => {
+  const now = getBusinessParts(new Date());
+  if (Number(year) < now.year) return true;
+  if (Number(year) > now.year) return false;
+  return Number(month1to12) < now.month + 1;
+};
+
 module.exports = {
   getBusinessDayBounds,
   getBusinessMinutes,
   getBusinessParts,
+  getDaysInCalendarMonth,
+  dateFromBusinessCalendar,
+  businessDateKeyFromParts,
+  eachBusinessCalendarDay,
+  isBusinessMonthComplete,
   isGeoAttendanceAllowedDay,
   isMondayWeeklyOff,
   parseHmToMinutes

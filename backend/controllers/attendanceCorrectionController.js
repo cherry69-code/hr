@@ -6,6 +6,7 @@ const PayrollAttendanceSummary = require('../models/PayrollAttendanceSummary');
 const asyncHandler = require('../middlewares/asyncHandler');
 const { sendCategorizedEmail, EmailType } = require('../utils/emailRouter');
 const { countPresentPayrollDays, calculateProratedInHandSalary } = require('../utils/payrollAttendance');
+const { getDaysInCalendarMonth, isBusinessMonthComplete } = require('../utils/businessTime');
 
 // Helper to recalculate payroll summary
 const recalculatePayrollSummary = async (employeeId, date) => {
@@ -17,7 +18,7 @@ const recalculatePayrollSummary = async (employeeId, date) => {
   startOfMonth.setHours(0, 0, 0, 0);
   const endDay = new Date(year, month, 0);
   endDay.setHours(0, 0, 0, 0);
-  const daysInMonth = endDay.getDate();
+  const daysInMonth = getDaysInCalendarMonth(year, month - 1);
 
   const employee = await User.findById(employeeId).select('salary joiningDate').lean();
 
@@ -47,7 +48,11 @@ const recalculatePayrollSummary = async (employeeId, date) => {
     }
   }
 
-  const dayStats = await countPresentPayrollDays(employeeId, effectiveStart, endDay);
+  const dayStats = await countPresentPayrollDays(employeeId, effectiveStart, endDay, {
+    payrollYear: year,
+    payrollMonth: month,
+    forceFullMonth: isBusinessMonthComplete(year, month)
+  });
 
   let annualCTC = Number(employee?.salary?.ctc || 0);
   try {

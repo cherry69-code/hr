@@ -1,5 +1,11 @@
 const Attendance = require('../models/Attendance');
-const { getBusinessParts, getBusinessDayBounds, isMondayWeeklyOff } = require('./businessTime');
+const {
+  getBusinessParts,
+  getBusinessDayBounds,
+  isMondayWeeklyOff,
+  eachBusinessCalendarDay,
+  isBusinessMonthComplete
+} = require('./businessTime');
 
 const businessDateKey = (date) => {
   const p = getBusinessParts(date);
@@ -41,13 +47,18 @@ const unpaidWeightForStatus = (status) => {
 };
 
 /**
- * Count paid (present) and unpaid days for payroll in [rangeStart, rangeEnd] (inclusive calendar days).
+ * Count paid (present) and unpaid days for payroll in [rangeStart, rangeEnd] (inclusive IST calendar days).
  * Policy: Monday = paid weekly off when no attendance row exists.
  * Net salary = (CTC/12 / daysInMonth) * presentDays
  */
-const countPresentPayrollDays = async (employeeObjectId, rangeStart, rangeEnd) => {
+const countPresentPayrollDays = async (employeeObjectId, rangeStart, rangeEnd, options = {}) => {
   const startBounds = getBusinessDayBounds(rangeStart);
   const endBounds = getBusinessDayBounds(rangeEnd);
+  const payrollYear = Number(options.payrollYear || 0);
+  const payrollMonth = Number(options.payrollMonth || 0);
+  const monthComplete =
+    options.forceFullMonth === true ||
+    (payrollYear > 0 && payrollMonth > 0 && isBusinessMonthComplete(payrollYear, payrollMonth));
 
   const records = await Attendance.find({
     employeeId: employeeObjectId,
@@ -63,32 +74,33 @@ const countPresentPayrollDays = async (employeeObjectId, rangeStart, rangeEnd) =
 
   let presentDays = 0;
   let unpaidDays = 0;
-  const cursor = new Date(startBounds.start);
-  const endDate = new Date(endBounds.start);
-  endDate.setHours(0, 0, 0, 0);
-  const todayStart = getBusinessDayBounds(new Date()).start;
-  const countThrough = endDate.getTime() < todayStart.getTime() ? endDate : new Date(todayStart);
+  let calendarDays = 0;
+  const todayKey = businessDateKey(new Date());
 
-  while (cursor.getTime() <= endDate.getTime()) {
-    const key = businessDateKey(cursor);
-    const status = statusByDay.get(key);
-    const isFutureDay = cursor.getTime() > countThrough.getTime();
+  eachBusinessCalendarDay(rangeStart, rangeEnd, ({ dateKey, dateRef }) => {
+    calendarDays += 1;
+    const status = statusByDay.get(dateKey);
+    const isFutureDay = !monthComplete && dateKey > todayKey;
 
     if (status) {
-      presentDays += paidWeightForStatus(status);
-      unpaidDays += unpaidWeightForStatus(status);
-    } else if (isMondayWeeklyOff(cursor)) {
+      const paid = paidWeightForStatus(status);
+      const unpaid = unpaidWeightForStatus(status);
+      presentDays += paid;
+      unpaidDays += unpaid;
+      if (paid === 0 && unpaid === 0 && !isMondayWeeklyOff(dateRef)) {
+        unpaidDays += 1;
+      }
+    } else if (isMondayWeeklyOff(dateRef)) {
       presentDays += 1;
     } else if (!isFutureDay) {
       unpaidDays += 1;
     }
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
+  });
 
   return {
     presentDays: Math.round((presentDays + Number.EPSILON) * 100) / 100,
     unpaidDays: Math.round((unpaidDays + Number.EPSILON) * 100) / 100,
+    calendarDays,
     hasRecords: records.length > 0
   };
 };

@@ -15,6 +15,7 @@ const {
   countPresentPayrollDays,
   calculateProratedInHandSalary
 } = require('../utils/payrollAttendance');
+const { getDaysInCalendarMonth } = require('../utils/businessTime');
 
 const monthRange = (month, year) => {
   const m = Number(month);
@@ -25,7 +26,8 @@ const monthRange = (month, year) => {
   endDay.setHours(0, 0, 0, 0);
   const endOfMonth = new Date(endDay);
   endOfMonth.setHours(23, 59, 59, 999);
-  return { startOfMonth, endDay, endOfMonth, daysInMonth: endDay.getDate() };
+  const daysInMonth = getDaysInCalendarMonth(y, m - 1);
+  return { startOfMonth, endDay, endOfMonth, daysInMonth };
 };
 
 const cloudinarySignedRawUrlFromPublicId = (publicId) => {
@@ -116,7 +118,11 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
     eligibleDays = Math.floor((endDay.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   }
 
-  const dayStats = await countPresentPayrollDays(employee._id, effectiveStart, endDay);
+  const dayStats = await countPresentPayrollDays(employee._id, effectiveStart, endDay, {
+    payrollYear: y,
+    payrollMonth: m,
+    forceFullMonth: true
+  });
   const presentDays = Number(dayStats.presentDays || 0);
   const unpaidDays = Number(dayStats.unpaidDays || 0);
 
@@ -201,6 +207,7 @@ const generatePayslipForEmployee = async (req, employee, month, year, input = {}
 
   doc.text(`Payroll Period: ${effectiveStart.toLocaleDateString()} - ${endDay.toLocaleDateString()}`);
   doc.text(`Days in Month: ${daysInMonth}`);
+  doc.text(`Calendar Days Counted: ${Number(dayStats.calendarDays || daysInMonth)}`);
   doc.text(`Present Days: ${presentDays}`);
   doc.text(`Unpaid Days: ${unpaidDays}`);
   if (monthFactor > 0 && monthFactor < 1) {
