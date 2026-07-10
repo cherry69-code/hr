@@ -1,4 +1,5 @@
 const Attendance = require('../models/Attendance');
+const Leave = require('../models/Leave');
 const {
   getBusinessParts,
   getBusinessDayBounds,
@@ -46,6 +47,51 @@ const unpaidWeightForStatus = (status) => {
   return 0;
 };
 
+const normalizeLeaveType = (leaveType) => {
+  const raw = String(leaveType || '').trim().toLowerCase();
+  if (raw === 'unpaid leave') return 'Unpaid Leave';
+  if (raw === 'paid leave') return 'Paid Leave';
+  if (raw === 'sick leave') return 'Sick Leave';
+  if (raw === 'casual leave') return 'Casual Leave';
+  return '';
+};
+
+const isPaidApprovedLeave = (leaveType) => {
+  const normalized = normalizeLeaveType(leaveType);
+  return Boolean(normalized) && normalized !== 'Unpaid Leave';
+};
+
+const getApprovedLeavesByDay = async (employeeObjectId, rangeStart, rangeEnd) => {
+  const leaves = await Leave.find({
+    employeeId: employeeObjectId,
+    status: 'approved',
+    fromDate: { $lte: rangeEnd },
+    toDate: { $gte: rangeStart }
+  })
+    .select('fromDate toDate leaveType')
+    .lean();
+
+  const leaveByDay = new Map();
+  for (const leave of leaves) {
+    const fromBounds = getBusinessDayBounds(leave.fromDate);
+    const toBounds = getBusinessDayBounds(leave.toDate);
+    const overlapStart = fromBounds.start.getTime() > rangeStart.getTime() ? fromBounds.start : rangeStart;
+    const overlapEnd = toBounds.end.getTime() < rangeEnd.getTime() ? toBounds.end : rangeEnd;
+    if (overlapStart.getTime() > overlapEnd.getTime()) continue;
+
+    eachBusinessCalendarDay(overlapStart, overlapEnd, ({ dateKey }) => {
+      const nextType = normalizeLeaveType(leave.leaveType);
+      if (!nextType) return;
+      const previousType = leaveByDay.get(dateKey);
+      if (!previousType || previousType === 'Unpaid Leave') {
+        leaveByDay.set(dateKey, nextType);
+      }
+    });
+  }
+
+  return leaveByDay;
+};
+
 /**
  * Count paid (present) and unpaid days for payroll in [rangeStart, rangeEnd] (inclusive IST calendar days).
  * Policy: Monday = paid weekly off when no attendance row exists.
@@ -72,23 +118,48 @@ const countPresentPayrollDays = async (employeeObjectId, rangeStart, rangeEnd, o
     statusByDay.set(businessDateKey(r.date), normalizeAttendanceStatus(r.status));
   }
 
+  const approvedLeaveByDay = await getApprovedLeavesByDay(employeeObjectId, startBounds.start, endBounds.end);
+
   let presentDays = 0;
   let unpaidDays = 0;
   let calendarDays = 0;
+  let paidLeaveDays = 0;
+  let unpaidLeaveDays = 0;
   const todayKey = businessDateKey(new Date());
 
   eachBusinessCalendarDay(rangeStart, rangeEnd, ({ dateKey, dateRef }) => {
     calendarDays += 1;
+    const leaveType = approvedLeaveByDay.get(dateKey);
     const status = statusByDay.get(dateKey);
     const isFutureDay = !monthComplete && dateKey > todayKey;
 
     if (status) {
-      const paid = paidWeightForStatus(status);
-      const unpaid = unpaidWeightForStatus(status);
+      let paid = paidWeightForStatus(status);
+      let unpaid = unpaidWeightForStatus(status);
+
+      if (leaveType) {
+        if (isPaidApprovedLeave(leaveType) && paid === 0) {
+          paid = 1;
+          unpaid = 0;
+          paidLeaveDays += 1;
+        } else if (!isPaidApprovedLeave(leaveType) && paid === 0 && unpaid === 0) {
+          unpaid = 1;
+          unpaidLeaveDays += 1;
+        }
+      }
+
       presentDays += paid;
       unpaidDays += unpaid;
       if (paid === 0 && unpaid === 0 && !isMondayWeeklyOff(dateRef)) {
         unpaidDays += 1;
+      }
+    } else if (leaveType) {
+      if (isPaidApprovedLeave(leaveType)) {
+        presentDays += 1;
+        paidLeaveDays += 1;
+      } else {
+        unpaidDays += 1;
+        unpaidLeaveDays += 1;
       }
     } else if (isMondayWeeklyOff(dateRef)) {
       presentDays += 1;
@@ -100,6 +171,8 @@ const countPresentPayrollDays = async (employeeObjectId, rangeStart, rangeEnd, o
   return {
     presentDays: Math.round((presentDays + Number.EPSILON) * 100) / 100,
     unpaidDays: Math.round((unpaidDays + Number.EPSILON) * 100) / 100,
+    paidLeaveDays: Math.round((paidLeaveDays + Number.EPSILON) * 100) / 100,
+    unpaidLeaveDays: Math.round((unpaidLeaveDays + Number.EPSILON) * 100) / 100,
     calendarDays,
     hasRecords: records.length > 0
   };
@@ -118,6 +191,7 @@ module.exports = {
   normalizeAttendanceStatus,
   paidWeightForStatus,
   unpaidWeightForStatus,
+  normalizeLeaveType,
   countPresentPayrollDays,
   calculateProratedInHandSalary
 };
