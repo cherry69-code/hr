@@ -21,6 +21,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         // Auto logout if 401 Unauthorized returned from API
         authService.logout();
       }
+      if (error.status === 403 && error.error?.error === 'Account inactive') {
+        // Auto logout if account is inactive
+        authService.logout();
+      }
       return throwError(() => error);
     })
   );

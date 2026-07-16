@@ -8,7 +8,8 @@ const {
   getManagers,
   sendLetter,
   updateProfilePicture,
-  activateEmployee
+  activateEmployee,
+  deactivateEmployee
 } = require('../controllers/employeeController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 
@@ -18,6 +19,7 @@ router.use(protect);
 
 router.post('/:id/send-letter', authorize('admin', 'hr'), sendLetter);
 router.post('/:id/activate', authorize('admin', 'hr'), activateEmployee);
+router.post('/:id/deactivate', authorize('admin', 'hr'), deactivateEmployee);
 
 router.get('/managers', authorize('admin', 'hr', 'manager'), getManagers);
 

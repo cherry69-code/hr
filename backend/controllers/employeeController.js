@@ -384,6 +384,28 @@ exports.activateEmployee = asyncHandler(async (req, res) => {
   return res.status(200).json({ success: true, data: safeEmployee });
 });
 
+// @desc    Deactivate employee
+// @route   POST /api/employees/:id/deactivate
+// @access  Private/Admin/HR
+exports.deactivateEmployee = asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!id) return res.status(400).json({ success: false, error: 'Employee ID is required' });
+
+  const user = await User.findById(id);
+  if (!user) return res.status(404).json({ success: false, error: 'Employee not found' });
+
+  user.status = 'inactive';
+  await user.save();
+
+  const safeEmployee = await User.findById(user._id)
+    .populate('departmentId')
+    .populate('reportingManagerId', 'fullName email')
+    .populate('teamId', 'name')
+    .lean();
+
+  return res.status(200).json({ success: true, data: safeEmployee });
+});
+
 // @desc    Update profile picture (Self or Admin/HR)
 // @route   PUT /api/employees/:id/profile-picture
 // @access  Private
@@ -474,6 +496,7 @@ module.exports = {
   getEmployee: exports.getEmployee,
   updateEmployee: exports.updateEmployee,
   activateEmployee: exports.activateEmployee,
+  deactivateEmployee: exports.deactivateEmployee,
   updateProfilePicture: exports.updateProfilePicture,
   deleteEmployee: exports.deleteEmployee,
   sendLetter: exports.sendLetter

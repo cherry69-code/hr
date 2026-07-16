@@ -302,4 +302,26 @@ export class EmployeeListComponent implements OnInit {
       error: (err) => this.toast.error(err.error?.error || 'Joining letter generation failed')
     });
   }
+
+  activateEmployee(id: string) {
+    this.http.post(`${environment.apiUrl}/employees/${id}/activate`, {}).subscribe({
+      next: () => {
+        this.toast.success('Employee activated');
+        this.loadEmployees();
+      },
+      error: (err) => this.toast.error(err.error?.error || 'Failed to activate employee')
+    });
+  }
+
+  deactivateEmployee(id: string) {
+    if (confirm('Are you sure you want to deactivate this employee? They will no longer be able to log in.')) {
+      this.http.post(`${environment.apiUrl}/employees/${id}/deactivate`, {}).subscribe({
+        next: () => {
+          this.toast.success('Employee deactivated');
+          this.loadEmployees();
+        },
+        error: (err) => this.toast.error(err.error?.error || 'Failed to deactivate employee')
+      });
+    }
+  }
 }

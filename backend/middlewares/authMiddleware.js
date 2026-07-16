@@ -23,6 +23,10 @@ exports.protect = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'User not found' });
     }
 
+    if (req.user.status === 'inactive') {
+      return res.status(403).json({ success: false, error: 'Account inactive' });
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ success: false, error: 'Not authorized' });
