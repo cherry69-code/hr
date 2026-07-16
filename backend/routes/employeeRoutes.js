@@ -18,8 +18,8 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/:id/send-letter', authorize('admin', 'hr'), sendLetter);
-router.post('/:id/activate', authorize('admin', 'hr'), activateEmployee);
-router.post('/:id/deactivate', authorize('admin', 'hr'), deactivateEmployee);
+router.post('/:id/activate', authorize('admin'), activateEmployee);
+router.post('/:id/deactivate', authorize('admin'), deactivateEmployee);
 
 router.get('/managers', authorize('admin', 'hr', 'manager'), getManagers);
 
