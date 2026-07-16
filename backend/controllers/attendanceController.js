@@ -56,7 +56,16 @@ const getApprovedLocationMatch = async ({ latitude, longitude, selectedLocationI
 };
 
 const getAttendanceStatus = ({ checkInTime, checkOutTime }) => {
-  const inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
+  const checkInParts = getBusinessParts(checkInTime);
+  const dayOfWeek = checkInParts.dayOfWeek;
+  // Tuesday (2) to Friday (5): cutoff at 9:45 AM (585 minutes)
+  // Other days: keep original cutoff at 10:00 AM (600 minutes)
+  let inCutoffMinutes;
+  if (dayOfWeek >= 2 && dayOfWeek <=5) {
+    inCutoffMinutes = 9 * 60 + 45;
+  } else {
+    inCutoffMinutes = CHECK_IN_CUTOFF_HOUR * 60;
+  }
   const outCutoffMinutes = CHECK_OUT_CUTOFF_HOUR * 60 + CHECK_OUT_CUTOFF_MINUTE;
   const checkInMinutes = getBusinessMinutes(checkInTime);
   const checkOutMinutes = checkOutTime ? getBusinessMinutes(checkOutTime) : null;
