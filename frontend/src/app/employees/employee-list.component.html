@@ -63,12 +63,12 @@
           <td class="p-3">
             <div class="flex flex-col gap-1">
               <button (click)="viewProfile(emp._id)" class="text-indigo-600 hover:text-indigo-800 font-medium transition text-left text-sm">Profile / Docs</button>
-              <button (click)="openEditModal(emp)" class="text-blue-600 hover:text-blue-800 font-medium transition text-left text-sm">Edit</button>
-              <button (click)="generateOfferLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Offer Letter</button>
-              <button (click)="generateJoiningLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Joining Letter</button>
-              <button *ngIf="emp.status === 'active'" (click)="deactivateEmployee(emp._id)" class="text-orange-600 hover:text-orange-800 font-medium transition text-left text-sm">Deactivate</button>
-              <button *ngIf="emp.status === 'inactive'" (click)="activateEmployee(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-sm">Activate</button>
-              <button (click)="deleteEmployee(emp._id)" class="text-red-600 hover:text-red-800 font-medium transition text-left text-sm">Delete</button>
+              <button *ngIf="role === 'admin' || role === 'hr'" (click)="openEditModal(emp)" class="text-blue-600 hover:text-blue-800 font-medium transition text-left text-sm">Edit</button>
+              <button *ngIf="role === 'admin' || role === 'hr'" (click)="generateOfferLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Offer Letter</button>
+              <button *ngIf="role === 'admin' || role === 'hr'" (click)="generateJoiningLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Joining Letter</button>
+              <button *ngIf="(role === 'admin' || role === 'hr') && emp.status === 'active'" (click)="deactivateEmployee(emp._id)" class="text-orange-600 hover:text-orange-800 font-medium transition text-left text-sm">Deactivate</button>
+              <button *ngIf="(role === 'admin' || role === 'hr') && emp.status === 'inactive'" (click)="activateEmployee(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-sm">Activate</button>
+              <button *ngIf="role === 'admin'" (click)="deleteEmployee(emp._id)" class="text-red-600 hover:text-red-800 font-medium transition text-left text-sm">Delete</button>
             </div>
           </td>
         </tr>
