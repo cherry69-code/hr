@@ -11,3 +11,12 @@ services:
         value: production
       - key: CORS_ORIGINS
         value: https://hrpropninja.com,https://www.hrpropninja.com
+
+staticSites:
+  - name: prophr-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    publishDir: dist/frontend/browser
+    envVars:
+      - key: NODE_ENV
+        value: production
