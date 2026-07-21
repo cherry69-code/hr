@@ -57,6 +57,8 @@ export class EmployeeListComponent implements OnInit {
   teams: any[] = [];
 
   ngOnInit() {
+    console.log('Current user:', this.authService.currentUserValue);
+    console.log('Current user role:', this.role);
     this.loadEmployees();
     this.loadDepartments();
     this.loadManagers();
@@ -105,6 +107,7 @@ export class EmployeeListComponent implements OnInit {
     if (this.selectedTeamId) params.teamId = this.selectedTeamId;
     this.http.get(`${environment.apiUrl}/employees`, { params }).subscribe({
       next: (res: any) => {
+        console.log('Employees:', res.data);
         this.employees = res.data;
         this.loading = false;
       },
