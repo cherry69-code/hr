@@ -1,8 +1,14 @@
 <div class="min-h-screen p-4 flex items-start justify-end" [ngStyle]="bgStyle">
   <div class="bg-white/95 backdrop-blur-sm shadow-xl rounded-2xl w-full max-w-md p-8 mt-6 mr-6">
-    <h2 class="text-2xl font-bold text-[#0F172A] text-center mb-6">
-      PropNinja HRMS
-    </h2>
+    <div class="flex flex-col items-center gap-2 mb-4">
+      <h2 class="text-2xl font-bold text-[#0F172A] text-center">
+        PropNinja HRMS
+      </h2>
+      <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+        UI Build {{ loginBuildId }}
+      </div>
+    </div>
 
     <form class="space-y-4" (ngSubmit)="onSubmit()">
       <div>

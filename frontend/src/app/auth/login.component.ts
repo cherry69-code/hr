@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { Router } from '@angular/router';
 
+const LOGIN_BUILD_ID = '2026-08-07-1955';
+
 @Component({
   selector: 'app-login',
   standalone: true,
@@ -13,6 +15,8 @@ import { Router } from '@angular/router';
 export class LoginComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
+
+  loginBuildId = LOGIN_BUILD_ID;
 
   credentials = {
     loginId: '', // Can be email or employee code
