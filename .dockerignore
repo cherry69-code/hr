@@ -1,0 +1,15 @@
+node_modules
+*/node_modules
+.git
+.gitignore
+.env
+.env.*
+npm-debug.log
+coverage
+*.log
+platform-ts
+.husky
+backend/__tests__
+frontend/cypress
+.DS_Store
+.vscode
