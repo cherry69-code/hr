@@ -7,6 +7,8 @@ import { ToastService } from '../services/toast.service';
 import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
 
+const UI_BUILD_ID = '2026-08-07-1420';
+
 @Component({
   selector: 'app-employee-list',
   standalone: true,
@@ -19,6 +21,7 @@ export class EmployeeListComponent implements OnInit {
   private toast = inject(ToastService);
   private authService = inject(AuthService);
 
+  uiBuildId = UI_BUILD_ID;
   employees: any[] = [];
   departments: any[] = [];
   managers: any[] = [];

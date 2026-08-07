@@ -5,7 +5,9 @@
     "lint": "npm --prefix backend run lint",
     "backend:test": "npm --prefix backend test",
     "prepare": "husky",
-    "check:secrets": "node scripts/check-secrets.js"
+    "check:secrets": "node scripts/check-secrets.js",
+    "render:build": "npm --prefix backend install && npm --prefix frontend install && npm --prefix frontend run build",
+    "render:start": "node backend/server.js"
   },
   "devDependencies": {
     "husky": "^9.1.7"

@@ -1,7 +1,13 @@
 <div class="bg-white p-6 rounded-2xl shadow">
 
-  <div class="flex justify-between items-center mb-6">
-    <h2 class="text-xl font-bold text-[#0F172A]">Employees</h2>
+  <div class="flex flex-col gap-3 md:flex-row md:justify-between md:items-center mb-6">
+    <div class="flex flex-col gap-2">
+      <h2 class="text-xl font-bold text-[#0F172A]">Employees</h2>
+      <div class="inline-flex w-max items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+        UI Build {{ uiBuildId }}
+      </div>
+    </div>
     <button (click)="openAddModal()" class="bg-[#16A34A] text-white px-4 py-2 rounded-xl font-medium hover:bg-[#15803d] transition shadow-sm">
       Add Employee
     </button>
