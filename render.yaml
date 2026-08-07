@@ -2,21 +2,12 @@ services:
   - type: web
     name: prophr-api
     runtime: node
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: node server.js
+    rootDir: .
+    buildCommand: cd backend && npm install && cd ../frontend && npm install && npm run build
+    startCommand: cd backend && node server.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGINS
-        value: https://hrpropninja.com,https://www.hrpropninja.com
-
-staticSites:
-  - name: prophr-frontend
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    publishDir: dist/frontend/browser
-    envVars:
-      - key: NODE_ENV
-        value: production
+        value: https://hrpropninja.com,https://www.hrpropninja.com,https://api.hrpropninja.com
