@@ -7,7 +7,7 @@ import { ToastService } from '../services/toast.service';
 import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
 
-const UI_BUILD_ID = '2026-08-07-1420';
+const UI_BUILD_ID = '2026-08-07-1940';
 
 @Component({
   selector: 'app-employee-list',
