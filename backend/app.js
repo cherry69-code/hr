@@ -10,6 +10,10 @@ const cors = require('cors');
 const path = require('path');
 const connectDB = require('./config/db');
 
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
+
 // Load env vars
 dotenv.config();
 
