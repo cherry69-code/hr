@@ -61,14 +61,18 @@
             }" class="font-semibold capitalize">{{ emp.status }}</span>
           </td>
           <td class="p-3">
-            <div class="flex flex-col gap-1">
-              <button (click)="viewProfile(emp._id)" class="text-indigo-600 hover:text-indigo-800 font-medium transition text-left text-sm">Profile / Docs</button>
-              <button *ngIf="true" (click)="openEditModal(emp)" class="text-blue-600 hover:text-blue-800 font-medium transition text-left text-sm">Edit</button>
-              <button *ngIf="true" (click)="generateOfferLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Offer Letter</button>
-              <button *ngIf="true" (click)="generateJoiningLetter(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-xs">Send Joining Letter</button>
-              <button *ngIf="emp.status.toLowerCase() === 'active'" (click)="deactivateEmployee(emp._id)" class="text-orange-600 hover:text-orange-800 font-medium transition text-left text-sm">Deactivate</button>
-              <button *ngIf="emp.status.toLowerCase() === 'inactive'" (click)="activateEmployee(emp._id)" class="text-green-600 hover:text-green-800 font-medium transition text-left text-sm">Activate</button>
-              <button *ngIf="true" (click)="deleteEmployee(emp._id)" class="text-red-600 hover:text-red-800 font-medium transition text-left text-sm">Delete</button>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap gap-2">
+                <button (click)="viewProfile(emp._id)" class="inline-flex items-center rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition">Profile / Docs</button>
+                <button *ngIf="true" (click)="openEditModal(emp._id)" class="inline-flex items-center rounded-lg border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition">Edit</button>
+                <button *ngIf="emp.status.toLowerCase() === 'active'" (click)="deactivateEmployee(emp._id)" class="inline-flex items-center rounded-lg border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100 transition shadow-sm">Deactivate</button>
+                <button *ngIf="emp.status.toLowerCase() === 'inactive'" (click)="activateEmployee(emp._id)" class="inline-flex items-center rounded-lg border border-green-200 bg-green-50 px-3 py-1 text-xs font-bold text-green-700 hover:bg-green-100 transition shadow-sm">Activate</button>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button *ngIf="true" (click)="generateOfferLetter(emp._id)" class="inline-flex items-center rounded-md px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 transition">Send Offer Letter</button>
+                <button *ngIf="true" (click)="generateJoiningLetter(emp._id)" class="inline-flex items-center rounded-md px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 transition">Send Joining Letter</button>
+                <button *ngIf="true" (click)="deleteEmployee(emp._id)" class="inline-flex items-center rounded-md px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 transition">Delete</button>
+              </div>
             </div>
           </td>
         </tr>
